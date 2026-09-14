@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IE Galaxy Repack</title>
+<style>
+  :root {
+    --bg: #0b0d10;
+    --bg-panel: #14171c;
+    --border: #262b33;
+    --text: #e8eaed;
+    --text-dim: #9aa2ad;
+    --accent: #4fc3f7;
+    --accent-dim: #1c4a5c;
+    --ok: #4caf82;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.55;
+  }
+  .wrap { max-width: 780px; margin: 0 auto; padding: 56px 20px 80px; }
+  header { margin-bottom: 40px; }
+  h1 {
+    font-size: 2rem;
+    margin: 0 0 8px;
+    letter-spacing: -0.01em;
+  }
+  .tagline { color: var(--text-dim); font-size: 1.05rem; margin: 0; }
+  .badge-row { margin-top: 18px; display: flex; gap: 10px; flex-wrap: wrap; }
+  .badge {
+    font-size: 0.78rem;
+    color: var(--text-dim);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 4px 12px;
+  }
+  h2 {
+    font-size: 1.15rem;
+    margin: 48px 0 14px;
+    color: var(--text);
+  }
+  p { color: #cfd3d8; }
+  .lede { font-size: 1.05rem; color: var(--text); }
+  code, .mono {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.9em;
+  }
+  code {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 0.1em 0.4em;
+  }
+
+  .steps {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    margin: 20px 0 8px;
+  }
+  .step {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+  }
+  .step-num {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    background: var(--accent-dim);
+    color: var(--accent);
+    font-size: 0.78rem;
+    font-weight: 600;
+    margin-bottom: 10px;
+  }
+  .step h3 { margin: 0 0 6px; font-size: 0.95rem; }
+  .step p { margin: 0; font-size: 0.86rem; color: var(--text-dim); }
+  @media (max-width: 600px) {
+    .steps { grid-template-columns: 1fr; }
+  }
+
+  .downloads {
+    display: grid;
+    gap: 10px;
+    margin-top: 16px;
+  }
+  .dl {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 18px;
+    text-decoration: none;
+    color: var(--text);
+    transition: border-color 0.15s ease;
+  }
+  .dl:hover { border-color: var(--accent-dim); }
+  .dl-os { font-weight: 600; font-size: 0.95rem; }
+  .dl-file { color: var(--text-dim); font-size: 0.82rem; }
+  .dl-arrow { color: var(--accent); font-size: 1.1rem; }
+
+  .callout {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: 6px;
+    padding: 14px 18px;
+    font-size: 0.92rem;
+    color: #cfd3d8;
+  }
+  .callout strong { color: var(--text); }
+
+  .credit {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 20px;
+  }
+  .credit p { margin: 0; }
+  .credit a { color: var(--accent); }
+
+  footer {
+    margin-top: 56px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border);
+    color: var(--text-dim);
+    font-size: 0.85rem;
+  }
+  footer a { color: var(--text-dim); }
+  a { color: var(--accent); }
+
+  .log-preview {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 18px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.82rem;
+    color: var(--text-dim);
+  }
+  .log-preview .ok { color: var(--ok); }
+  .log-preview div { padding: 2px 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <h1>IE Galaxy Repack</h1>
+    <p class="tagline">Tu CIA japonés + el parche público de traducción → un juego en español listo para Azahar. Sin necesitar el archivo exacto del traductor.</p>
+    <div class="badge-row">
+      <span class="badge">MIT</span>
+      <span class="badge">Windows · macOS · Linux</span>
+      <span class="badge">Sin terminal, sin instalador</span>
+    </div>
+  </header>
+
+  <section>
+    <p class="lede">
+      El parche oficial de traducción de <strong>Inazuma Eleven GO Galaxy</strong>
+      falla con «checksum mismatch» contra los dumps japoneses que circulan
+      normalmente — compara byte a byte contra un archivo concreto que el
+      equipo de traducción nunca distribuyó. Esta herramienta reconstruye el
+      juego a nivel de sistema de archivos en vez de parchear el contenedor
+      entero, así que funciona con el dump japonés más estándar que hay.
+    </p>
+  </section>
+
+  <h2>Cómo funciona</h2>
+  <div class="steps">
+    <div class="step">
+      <div class="step-num">1</div>
+      <h3>Elige tu CIA japonés</h3>
+      <p>El dump de Galaxy Supernova que ya tengas.</p>
+    </div>
+    <div class="step">
+      <div class="step-num">2</div>
+      <h3>Elige el parche</h3>
+      <p>El <code>.xdelta</code> o el <code>.zip</code> tal cual del blog oficial.</p>
+    </div>
+    <div class="step">
+      <div class="step-num">3</div>
+      <h3>Pulsa el botón</h3>
+      <p>Sale un <code>.3ds</code> en español, listo para cargar en Azahar.</p>
+    </div>
+  </div>
+
+  <div class="log-preview" style="margin-top:18px;">
+    <div>Etapa 1/7: Leyendo el CIA base</div>
+    <div>Etapa 2/7: Descifrando la base</div>
+    <div>Etapa 3/7: Preparando el parche</div>
+    <div>Etapa 4/7: Analizando el parche</div>
+    <div>Etapa 5/7: Aplicando la traducción</div>
+    <div>Etapa 6/7: Verificando el resultado</div>
+    <div>Etapa 7/7: Construyendo el .3ds</div>
+    <div class="ok">OK: Listo.</div>
+  </div>
+
+  <h2>Descargar</h2>
+  <div class="downloads">
+    <a class="dl" href="https://github.com/Javiju555/ie-galaxy-repack/releases/latest/download/ie-galaxy-repack-windows-x86_64.zip">
+      <span><span class="dl-os">Windows</span><br><span class="dl-file">x86_64 · .zip</span></span>
+      <span class="dl-arrow">↓</span>
+    </a>
+    <a class="dl" href="https://github.com/Javiju555/ie-galaxy-repack/releases/latest/download/ie-galaxy-repack-macos-arm64.tar.gz">
+      <span><span class="dl-os">macOS</span><br><span class="dl-file">Apple Silicon · .tar.gz</span></span>
+      <span class="dl-arrow">↓</span>
+    </a>
+    <a class="dl" href="https://github.com/Javiju555/ie-galaxy-repack/releases/latest/download/ie-galaxy-repack-linux-x86_64.tar.gz">
+      <span><span class="dl-os">Linux</span><br><span class="dl-file">x86_64 · .tar.gz</span></span>
+      <span class="dl-arrow">↓</span>
+    </a>
+  </div>
+  <p style="margin-top:12px; font-size:0.86rem; color:var(--text-dim);">
+    Descomprime la carpeta entera antes de abrir el programa — el ejecutable
+    necesita la carpeta <code>sidecars/</code> al lado. Ver todas las
+    versiones en <a href="https://github.com/Javiju555/ie-galaxy-repack/releases">Releases</a>.
+  </p>
+
+  <h2>Sobre el porqué</h2>
+  <div class="callout">
+    <strong>No es un fallo del juego.</strong> Es que el parche compara el
+    CIA entero byte a byte contra un archivo que nunca se distribuyó
+    públicamente. De los ~3500 archivos internos del juego, la traducción
+    solo toca el código y 2 archivos de texto — el resto es idéntico entre
+    versiones. Reconstruir a ese nivel evita depender del archivo exacto del
+    traductor. Escrito con más detalle técnico en el
+    <a href="https://github.com/Javiju555/ie-galaxy-repack#el-problema-que-resuelve">README</a>.
+  </div>
+
+  <h2>Crédito</h2>
+  <div class="credit">
+    <p>
+      Toda la traducción es obra del equipo de
+      <a href="https://x.com/IEgogalaxyesp" target="_blank" rel="noopener">@IEgogalaxyesp</a>,
+      liderado por Ale_z_plumber. Esta herramienta solo existe para que su
+      trabajo le llegue a más gente sin dramas de instalación.
+    </p>
+  </div>
+
+  <footer>
+    Código fuente en
+    <a href="https://github.com/Javiju555/ie-galaxy-repack">github.com/Javiju555/ie-galaxy-repack</a>
+    — MIT, sin ROMs ni datos del juego en el repo.
+  </footer>
+
+</div>
+</body>
+</html>
