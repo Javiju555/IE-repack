@@ -66,17 +66,28 @@ distintas todavía.
 
 ### Aplicación gráfica (recomendada si no usas la terminal)
 
-En `gui/` hay una app de escritorio (Windows/Mac/Linux) que hace lo mismo que
-el modo `--xdelta-patch` del script: eliges tu CIA japonés y el parche
-(`.xdelta` o el `.zip` del blog), eliges dónde guardar y pulsas el botón, con
-barra de progreso y registro en la ventana. Si pones los dos archivos junto al
-ejecutable, los precarga solos al arrancar.
+1. Baja el `.zip`/`.tar.gz` de tu sistema desde
+   [Releases](https://github.com/Javiju555/ie-galaxy-repack/releases) —
+   Windows, macOS (Apple Silicon) o Linux x86_64.
+2. Descomprímelo entero (el ejecutable necesita la carpeta `sidecars/` al
+   lado, no lo muevas suelto).
+3. Abre el programa. Elige tu CIA japonés y el parche (`.xdelta` o el `.zip`
+   del blog tal cual), elige dónde guardar, pulsa el botón. Si dejas los dos
+   archivos junto al ejecutable antes de abrirlo, los detecta y precarga solo.
+
+Nada de terminal, nada de instalar Rust ni nada más — el binario ya trae todo
+lo que necesita.
+
+<details>
+<summary>Compilar desde fuente (solo si quieres tocar el código)</summary>
 
 ```bash
 cd gui
 cargo build --release -p ie-gui
 # El binario queda en gui/target/release/ie-galaxy-repack
 ```
+
+</details>
 
 Decisiones (documentadas a propósito para quien retome esto):
 
