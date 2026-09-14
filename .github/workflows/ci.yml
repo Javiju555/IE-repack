@@ -1,0 +1,99 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    name: test + build (linux)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: dependencias de sistema (winit/egui)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libx11-dev libxcursor-dev libxrandr-dev libxi-dev \
+            libgl1-mesa-dev libwayland-dev libxkbcommon-dev
+      - name: script bash
+        run: bash -n scripts/rebuild.sh && ./scripts/rebuild.sh --help
+      - name: tests núcleo (los dorados se saltan sin dumps)
+        run: cargo test -p ie-core --manifest-path gui/Cargo.toml
+      - name: tests GUI (incluye layout headless)
+        run: cargo test -p ie-gui --manifest-path gui/Cargo.toml
+
+  release:
+    name: binario ${{ matrix.plat }}
+    if: startsWith(github.ref, 'refs/tags/v')
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            plat: linux-x86_64
+            bin: ie-galaxy-repack
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            plat: windows-x86_64
+            bin: ie-galaxy-repack.exe
+          - os: macos-14
+            target: aarch64-apple-darwin
+            plat: macos-arm64
+            bin: ie-galaxy-repack
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - name: dependencias de sistema (solo linux)
+        if: matrix.plat == 'linux-x86_64'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libx11-dev libxcursor-dev libxrandr-dev libxi-dev \
+            libgl1-mesa-dev libwayland-dev libxkbcommon-dev
+      - name: compilar
+        run: cargo build --release --target ${{ matrix.target }} --manifest-path gui/Cargo.toml -p ie-gui
+      - name: empaquetar
+        shell: bash
+        run: |
+          DIST="dist/ie-galaxy-repack-${{ matrix.plat }}"
+          mkdir -p "$DIST/sidecars/${{ matrix.plat }}"
+          cp "gui/target/${{ matrix.target }}/release/${{ matrix.bin }}" "$DIST/"
+          cp "gui/sidecars/${{ matrix.plat }}/"* "$DIST/sidecars/${{ matrix.plat }}/"
+          cp LICENSE "$DIST/"
+          cp gui/sidecars/README.md "$DIST/sidecars-LEEME.txt"
+          if [[ "${{ matrix.plat }}" == windows-* ]]; then
+            (cd dist && 7z a "ie-galaxy-repack-${{ matrix.plat }}.zip" "ie-galaxy-repack-${{ matrix.plat }}")
+          else
+            (cd dist && tar czf "ie-galaxy-repack-${{ matrix.plat }}.tar.gz" "ie-galaxy-repack-${{ matrix.plat }}")
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pkg-${{ matrix.plat }}
+          path: dist/ie-galaxy-repack-${{ matrix.plat }}.*
+
+  publish:
+    name: publicar release
+    needs: [check, release]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: pkg-*
+          merge-multiple: true
+          path: dist
+      - uses: softprops/action-gh-release@v2
+        with:
+          body_path: .github/RELEASE_NOTES.md
+          files: dist/*

@@ -1,0 +1,14 @@
+# Nunca debe haber ROMs, CIAs, ni datos de juego en este repo.
+*.cia
+*.3ds
+# Scratch local de investigación (puede contener CIAs, xdelta y salidas de varios GB).
+.test_scratch/
+*.xdelta
+*.cci
+*.cxi
+*.fa
+*.nds
+ie-galaxy-repack.*/
+# Build de Rust (la GUI vive en gui/).
+target/
+gui/target/
