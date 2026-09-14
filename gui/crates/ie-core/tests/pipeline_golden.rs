@@ -101,11 +101,11 @@ fn pipeline_produce_traduccion_de_referencia() {
     // Envoltura NCSD como makerom: firma presente (Azahar la exige aunque sea
     // relleno) y segundo id con tipo 0x0005. Previene volver a ceros.
     {
-        use std::io::{Read, Seek, SeekFrom};
+        use std::io::Read;
         let mut f = std::fs::File::open(&out).unwrap();
         let mut hdr = [0u8; 0x200];
         f.read_exact(&mut hdr).unwrap();
-        const FILLER: &[u8; 256] = include_bytes!("../../src/ncsd_rsa_filler.bin");
+        const FILLER: &[u8; 256] = include_bytes!("../src/ncsd_rsa_filler.bin");
         assert!(FILLER.iter().any(|&b| b != 0));
         assert_eq!(&hdr[..0x100], FILLER, "firma NCSD ausente");
         assert_eq!(&hdr[0x198..0x1A0], &0x0005_0000_0010_BB00u64.to_le_bytes());
