@@ -87,6 +87,26 @@ cargo build --release -p ie-gui
 # El binario queda en gui/target/release/ie-galaxy-repack
 ```
 
+La app arranca en modo Galaxy; el selector ofrece además "Pack de
+traducción (manifiesto)" y un modo genérico "Parche .3ds (estricto,
+experimental)": acepta base `.cia`/`.3ds`, una cadena
+ordenada de parches y SHA final o de contenido opcionales (el de contenido,
+desde el byte 0x200, es el que puede pasar una base convertida desde CIA,
+cuyo wrapper NCSD difiere del cartucho por linaje). Sirve para parches
+distribuidos sobre CCI descifrado canónico (p. ej. traducciones tipo IE 1-2-3);
+está probado con parches sintéticos y con Galaxy como stand-in, pendiente de
+validar con un dump real de esos juegos (ver
+`investigacion/NOTA_IE123.md`).
+
+El modo pack acepta una carpeta con `manifiesto.json` + parches `.xdelta`
+por fichero (formato v57 de la traducción de IE 1-2-3 ES): verifica el SHA
+original de cada fichero de tu base, aplica su parche en estricto, verifica
+el resultado y reconstruye el RomFS (vale aunque cambien los tamaños).
+Todo verificado de punta a punta, incluido arranque en español en Azahar.
+
+La app escribe siempre `ie-galaxy-repack.log` junto al ejecutable: si algo
+falla, adjúntalo al abrir un issue.
+
 </details>
 
 Decisiones (documentadas a propósito para quien retome esto):
@@ -103,7 +123,7 @@ Decisiones (documentadas a propósito para quien retome esto):
 - Las claves AES de 3DS que usa el descifrado son las mismas que distribuye
   3dstool en su fuente abierta (ver `gui/crates/ie-core/src/ncch.rs`).
 - Todo el temporal va junto a la salida (disco real, nunca `/tmp` si es
-  tmpfs) y hacen falta ~15 GB libres. Nada de ROMs/CIAs sale del disco del
+  tmpfs) y hacen falta ~10 GB libres. Nada de ROMs/CIAs sale del disco del
   usuario ni entra al repo (ver `.gitignore`).
 
 ### Script (terminal)

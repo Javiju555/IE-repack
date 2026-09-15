@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Javiju
+//
+// SPDX-License-Identifier: MIT
+
 //! Orquestación del binario oficial `xdelta3` (única dependencia externa).
 //!
 //! Por qué sidecar y no reimplementación: el parche usa compresor secundario
@@ -118,21 +122,59 @@ pub fn decode_forced(
     dest: &Path,
     expected_total: u64,
     cancel: &AtomicBool,
+    on_progress: impl FnMut(u64, u64),
+) -> Result<()> {
+    decode_inner(xdelta3, source, patch, dest, expected_total, true, false, cancel, on_progress)
+}
+
+/// Decodifica en modo ESTRICTO (con checksums): si la fuente no es la base
+/// exacta del parche, falla con el motivo de xdelta3 (normalmente checksum).
+/// Es lo correcto para parches sobre CCI canónico (p. ej. IE 1-2-3), donde un
+/// fallo significa "otra versión", no "otro dump del mismo".
+pub fn decode_strict(
+    xdelta3: &Path,
+    source: &Path,
+    patch: &Path,
+    dest: &Path,
+    expected_total: u64,
+    cancel: &AtomicBool,
+    on_progress: impl FnMut(u64, u64),
+) -> Result<()> {
+    decode_inner(xdelta3, source, patch, dest, expected_total, false, true, cancel, on_progress)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn decode_inner(
+    xdelta3: &Path,
+    source: &Path,
+    patch: &Path,
+    dest: &Path,
+    expected_total: u64,
+    no_checksum: bool,
+    capture_stderr: bool,
+    cancel: &AtomicBool,
     mut on_progress: impl FnMut(u64, u64),
 ) -> Result<()> {
     if dest.exists() {
         std::fs::remove_file(dest)?;
     }
-    let mut child: Child = Command::new(xdelta3)
-        .arg("-d")
-        .arg("-n")
-        .arg("-s")
+    let mut cmd = Command::new(xdelta3);
+    cmd.arg("-d");
+    if no_checksum {
+        cmd.arg("-n");
+    }
+    cmd.arg("-s")
         .arg(source)
         .arg(patch)
         .arg(dest)
         .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stdout(Stdio::null());
+    if capture_stderr {
+        cmd.stderr(Stdio::piped());
+    } else {
+        cmd.stderr(Stdio::null());
+    }
+    let mut child: Child = cmd
         .spawn()
         .map_err(|e| Error::Xdelta(format!("no se pudo lanzar xdelta3: {e}")))?;
     let start = Instant::now();
@@ -141,7 +183,7 @@ pub fn decode_forced(
             child.kill().ok();
             child.wait().ok();
             std::fs::remove_file(dest).ok();
-            return Err(Error::Xdelta("cancelado por el usuario".into()));
+            return Err(Error::Cancelled);
         }
         match child.try_wait() {
             Err(e) => {
@@ -150,7 +192,30 @@ pub fn decode_forced(
             }
             Ok(Some(status)) => {
                 if !status.success() {
-                    return Err(Error::Xdelta("xdelta3 falló decodificando".into()));
+                    // En modo estricto el stderr explica el motivo (típico:
+                    // checksum => base equivocada u otra versión del juego).
+                    let mut detail = String::new();
+                    if capture_stderr {
+                        if let Some(mut err) = child.stderr.take() {
+                            let mut buf = vec![0u8; 2048];
+                            use std::io::Read as _;
+                            if let Ok(n) = err.read(&mut buf) {
+                                detail = String::from_utf8_lossy(&buf[..n])
+                                    .chars()
+                                    .filter(|c| !c.is_control() || *c == ' ')
+                                    .collect::<String>()
+                                    .split_whitespace()
+                                    .collect::<Vec<_>>()
+                                    .join(" ");
+                                detail.truncate(300);
+                            }
+                        }
+                    }
+                    std::fs::remove_file(dest).ok();
+                    if detail.is_empty() {
+                        return Err(Error::Xdelta("xdelta3 falló decodificando".into()));
+                    }
+                    return Err(Error::Xdelta(format!("xdelta3 rechazó el parche: {detail}")));
                 }
                 on_progress(expected_total, expected_total);
                 break;

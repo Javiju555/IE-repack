@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Javiju
+//
+// SPDX-License-Identifier: MIT
+
 use eframe::egui;
 use ie_gui::App;
 

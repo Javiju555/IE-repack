@@ -1,0 +1,9 @@
+LicenseRef-MakeromOutput — 256 bytes de relleno de cabecera NCSD
+(ver gui/crates/ie-core/src/ncsd_rsa_filler.bin).
+
+Son los primeros 256 bytes que escribe `makerom -ciatocci` en la cabecera
+NCSD de un CCI que genera. No son código, ni claves, ni contenido del juego:
+es relleno sin expresión creativa que Azahar exige presente (con ceros
+rechaza el archivo con "formato de aplicación inválido", verificado
+empíricamente). Se referencian aquí por honestidad de procedencia; a efectos
+prácticos se tratan como parte del trabajo propio MIT del repositorio.

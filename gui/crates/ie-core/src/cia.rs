@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Javiju
+//
+// SPDX-License-Identifier: MIT
+
 //! Parseo mínimo de contenedor CIA: localizar los contents (solo lectura).
 //!
 //! Estrategia idéntica a `rebuild.sh`: los tamaños salen del TMD y los

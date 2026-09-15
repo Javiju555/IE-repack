@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Javiju
+#
+# SPDX-License-Identifier: MIT
+
 [workspace]
 resolver = "2"
 members = ["crates/ie-core", "crates/ie-gui"]

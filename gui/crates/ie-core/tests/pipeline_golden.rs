@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Javiju
+//
+// SPDX-License-Identifier: MIT
+
 //! Test dorado end-to-end (LOCAL, ignorado por defecto).
 //!
 //! Ejecuta el pipeline nativo completo sobre el dump propio y comprueba que
