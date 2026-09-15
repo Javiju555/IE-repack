@@ -239,7 +239,8 @@ dorado (hashes de `ie6_a.fa`/`ie6_b.fa`).
   Azahar arranca igual); slots 0..N-1 por orden (el del manual puede
   diferir del cartucho, cosmético). Validado con CIA cifrado real de
   Galaxy + minipack de 1 fichero (`manifest_galaxy_cia`, ignorado).
-  IE123-CIA de 3 contenidos: pendiente de muestra real para validar slots.
+  SIGUIENTE: validar con un CIA real de 3 contenidos (no hay ninguno en
+  casa: solo dumps CCI) en cuanto aparezca uno.
 - CRO hashes 0x80: la herramienta aplica los bytes tal cual (no recalcula,
   igual que su pipeline). En Azahar funciona; en HW con Luma los CRO
   parcheados funcionan en la práctica (la escena los usa a diario).
