@@ -1,4 +1,4 @@
-# ie-galaxy-repack
+# ie-repack
 
 Herramienta para reconstruir una versión traducida y jugable de **Inazuma
 Eleven GO Galaxy** a partir de cualquier dump japonés correcto del juego,
@@ -67,7 +67,7 @@ distintas todavía.
 ### Aplicación gráfica (recomendada si no usas la terminal)
 
 1. Baja el `.zip`/`.tar.gz` de tu sistema desde
-   [Releases](https://github.com/Javiju555/ie-galaxy-repack/releases) —
+   [Releases](https://github.com/Javiju555/ie-repack/releases) —
    Windows, macOS (Apple Silicon) o Linux x86_64.
 2. Descomprímelo entero (el ejecutable necesita la carpeta `sidecars/` al
    lado, no lo muevas suelto).
@@ -84,7 +84,7 @@ lo que necesita.
 ```bash
 cd gui
 cargo build --release -p ie-gui
-# El binario queda en gui/target/release/ie-galaxy-repack
+# El binario queda en gui/target/release/ie-repack
 ```
 
 La app arranca en modo Galaxy; el selector ofrece además "Pack de
@@ -104,7 +104,7 @@ original de cada fichero de tu base, aplica su parche en estricto, verifica
 el resultado y reconstruye el RomFS (vale aunque cambien los tamaños).
 Todo verificado de punta a punta, incluido arranque en español en Azahar.
 
-La app escribe siempre `ie-galaxy-repack.log` junto al ejecutable: si algo
+La app escribe siempre `ie-repack.log` junto al ejecutable: si algo
 falla, adjúntalo al abrir un issue.
 
 </details>

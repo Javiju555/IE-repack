@@ -1,5 +1,5 @@
 version = 1
-SPDX-PackageName = "ie-galaxy-repack"
+SPDX-PackageName = "ie-repack"
 SPDX-PackageSupplier = "Javiju555"
 
 [[annotations]]
@@ -17,7 +17,7 @@ SPDX-License-Identifier = "Apache-2.0"
 [[annotations]]
 path = "gui/crates/ie-core/src/ncsd_rsa_filler.bin"
 precedence = "aggregate"
-SPDX-FileCopyrightText = "2026, ie-galaxy-repack contributors"
+SPDX-FileCopyrightText = "2026, ie-repack contributors"
 SPDX-License-Identifier = "LicenseRef-MakeromOutput"
 
 [[annotations]]

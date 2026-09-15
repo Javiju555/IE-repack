@@ -247,6 +247,16 @@ dorado (hashes de `ie6_a.fa`/`ie6_b.fa`).
 - Ojo versiones: su mensaje dice archive v55 ≈1.454.492.944 pero el
   manifiesto v57 declara resultado 1.505.186.464. El manifiesto manda;
   pedirle que unifique nombres (rar v55 vs manifiesto v57).
+- 2026-09-16: tag v0.2.0-beta.1 CI todo verde, pre-release con 3 zips.
+  El "fallo" que vio Luis era el warning amarillo de Node 20, no un error.
+- Luis manda CIA de IE123 (1,8 GB, pendiente de descargar) para validar
+  slots de 3 contenidos. Pide además: renombre general del proyecto +
+  portable (ya lo es: exe + sidecars, sin instalador).
+- 2026-09-16: Pack + CIA de Luis con la beta.1 en GUI: COMPLETADO ("Listo",
+  salida 3,46 GB que arranca). Valida slots de 3 contenidos de verdad.
+  Episodio "no responde" de GNOME en etapa 4/7: el worker terminó bien por
+  debajo (stall de UI/sistema bajo carga, zram casi llena); mitigación:
+  cerrar el navegador durante el run. Letras de la GUI agrandadas.
 
 ## Borrador de respuesta para el hilo (publica Javiju, no el agente)
 
