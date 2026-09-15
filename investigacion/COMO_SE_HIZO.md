@@ -1,7 +1,7 @@
 # Cómo se hizo (para más frikis)
 
 Investigación y motor: Javiju555 con Muse Spark (asistente de código, vía
-opencode). Los dumps, parches y traducciones son de sus autores; aquí solo
+Blazer). Los dumps, parches y traducciones son de sus autores; aquí solo
 hay ingeniería inversa y herramienta.
 
 ## Galaxy Supernova: fontanería de descifrado
