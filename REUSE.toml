@@ -27,7 +27,7 @@ SPDX-FileCopyrightText = "2026, Javiju"
 SPDX-License-Identifier = "MIT"
 
 [[annotations]]
-path = ["gui/Cargo.lock", "gui/Cargo.toml", "gui/crates/**/Cargo.toml"]
+path = ["gui/Cargo.lock", "gui/Cargo.toml", "gui/crates/**/Cargo.toml", "gui/ie-repack.desktop"]
 precedence = "aggregate"
 SPDX-FileCopyrightText = "2026, Javiju"
 SPDX-License-Identifier = "MIT"

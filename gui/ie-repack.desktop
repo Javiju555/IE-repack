@@ -1,0 +1,16 @@
+# SPDX-FileCopyrightText: 2026 Javiju
+#
+# SPDX-License-Identifier: MIT
+
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=IE Repack
+GenericName=Parcheador ES de Inazuma Eleven (3DS)
+Comment=Tu base japonesa + el pack de traducción -> .3ds en español listo para Azahar
+Exec=ie-repack
+Path=
+Icon=applications-games
+Terminal=false
+Categories=Game;Emulator;
+StartupWMClass=ie-repack
