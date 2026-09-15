@@ -849,6 +849,26 @@ impl eframe::App for App {
         }
 
         egui::CentralPanel::default().show(ctx, |ui| {
+            // Tipografías un punto más generosas que el defecto de egui
+            // (se pedía que todo se lea sin esfuerzo).
+            {
+                use egui::{FontFamily, FontId, TextStyle};
+                let mut style = (*ctx.style()).clone();
+                for (k, size) in [
+                    (TextStyle::Small, 12.0),
+                    (TextStyle::Body, 15.0),
+                    (TextStyle::Button, 15.0),
+                    (TextStyle::Heading, 21.0),
+                    (TextStyle::Monospace, 13.0),
+                ] {
+                    style.text_styles.insert(k, FontId::new(size, FontFamily::Proportional));
+                }
+                // La monoespaciada del registro, mejor en mono de verdad.
+                style
+                    .text_styles
+                    .insert(TextStyle::Monospace, FontId::new(13.0, FontFamily::Monospace));
+                ctx.set_style(style);
+            }
             ui.add_space(6.0);
             ui.heading("IE Repack - parcheador ES");
             let subtitle = match self.mode {
@@ -991,7 +1011,7 @@ impl eframe::App for App {
             ui.separator();
             ui.label(egui::RichText::new(
                 "Proyecto de hobby hecho con amor por un fan (Javiju555). Puede fallar: \
-                 si algo sale mal, adjunta el log (ie-galaxy-repack.log, junto al programa) \
+                 si algo sale mal, adjunta el log (ie-repack.log, junto al programa) \
                  al abrir un issue o avisa en el hilo de la traducción.",
             )
             .small()
@@ -1009,7 +1029,7 @@ impl eframe::App for App {
                     }
                 }
                 if ui.small_button("Abrir issues en GitHub").clicked() {
-                    if open::that_detached("https://github.com/Javiju555/ie-galaxy-repack/issues").is_err() {
+                    if open::that_detached("https://github.com/Javiju555/ie-repack/issues").is_err() {
                         self.push_log("No se pudo abrir el navegador.");
                     }
                 }

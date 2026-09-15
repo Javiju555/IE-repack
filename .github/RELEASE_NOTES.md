@@ -6,8 +6,8 @@
 con el pack interno v57 de IE 1-2-3 ES (200/200 ficheros, arranque en
 español en Azahar). El modo Galaxy sigue igual.
 
-Si algo falla, adjunta `ie-galaxy-repack.log` (junto al programa) en un
-issue: https://github.com/Javiju555/ie-galaxy-repack/issues
+Si algo falla, adjunta `ie-repack.log` (junto al programa) en un
+issue: https://github.com/Javiju555/ie-repack/issues
 
 ---
 

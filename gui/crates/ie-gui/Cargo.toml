@@ -9,7 +9,7 @@ edition.workspace = true
 license.workspace = true
 
 [[bin]]
-name = "ie-galaxy-repack"
+name = "ie-repack"
 path = "src/main.rs"
 
 [dependencies]
