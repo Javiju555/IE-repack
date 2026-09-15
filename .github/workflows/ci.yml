@@ -43,15 +43,15 @@ jobs:
           - os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
             plat: linux-x86_64
-            bin: ie-galaxy-repack
+            bin: ie-repack
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             plat: windows-x86_64
-            bin: ie-galaxy-repack.exe
+            bin: ie-repack.exe
           - os: macos-14
             target: aarch64-apple-darwin
             plat: macos-arm64
-            bin: ie-galaxy-repack
+            bin: ie-repack
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -69,21 +69,21 @@ jobs:
       - name: empaquetar
         shell: bash
         run: |
-          DIST="dist/ie-galaxy-repack-${{ matrix.plat }}"
+          DIST="dist/ie-repack-${{ matrix.plat }}"
           mkdir -p "$DIST/sidecars/${{ matrix.plat }}"
           cp "gui/target/${{ matrix.target }}/release/${{ matrix.bin }}" "$DIST/"
           cp "gui/sidecars/${{ matrix.plat }}/"* "$DIST/sidecars/${{ matrix.plat }}/"
           cp LICENSE "$DIST/"
           cp gui/sidecars/README.md "$DIST/sidecars-LEEME.txt"
           if [[ "${{ matrix.plat }}" == windows-* ]]; then
-            (cd dist && 7z a "ie-galaxy-repack-${{ matrix.plat }}.zip" "ie-galaxy-repack-${{ matrix.plat }}")
+            (cd dist && 7z a "ie-repack-${{ matrix.plat }}.zip" "ie-repack-${{ matrix.plat }}")
           else
-            (cd dist && tar czf "ie-galaxy-repack-${{ matrix.plat }}.tar.gz" "ie-galaxy-repack-${{ matrix.plat }}")
+            (cd dist && tar czf "ie-repack-${{ matrix.plat }}.tar.gz" "ie-repack-${{ matrix.plat }}")
           fi
       - uses: actions/upload-artifact@v4
         with:
           name: pkg-${{ matrix.plat }}
-          path: dist/ie-galaxy-repack-${{ matrix.plat }}.*
+          path: dist/ie-repack-${{ matrix.plat }}.*
 
   publish:
     name: publicar release

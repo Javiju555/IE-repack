@@ -1,15 +1,15 @@
-# GUI de ie-galaxy-repack
+# GUI de ie-repack
 
 Ver el `README.md` de la raíz (sección «Aplicación gráfica») para uso y
 decisiones de diseño.
 
 ## Distribuir
 
-Junto al binario (`ie-galaxy-repack` / `ie-galaxy-repack.exe`) hay que llevar
+Junto al binario (`ie-repack` / `ie-repack.exe`) hay que llevar
 la carpeta `sidecars/` tal cual:
 
 ```text
-ie-galaxy-repack[.exe]
+ie-repack[.exe]
 sidecars/
   linux-x86_64/xdelta3
   macos-arm64/xdelta3

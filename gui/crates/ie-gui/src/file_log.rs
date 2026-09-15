@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: MIT
 
-//! Log de sesión en fichero, junto al ejecutable (`ie-galaxy-repack.log`).
+//! Log de sesión en fichero, junto al ejecutable (`ie-repack.log`).
 //!
 //! La GUI ya muestra un registro en pantalla; este módulo lo duplica a disco
 //! para que un fallo se pueda reportar con contexto (versión, entradas,
@@ -27,7 +27,7 @@ pub fn path() -> PathBuf {
         .and_then(|p| p.parent().map(|d| d.to_path_buf()))
         .filter(|d| !d.as_os_str().is_empty())
         .unwrap_or_else(|| PathBuf::from("."));
-    base.join("ie-galaxy-repack.log")
+    base.join("ie-repack.log")
 }
 
 /// Abre el fichero (append) y escribe la cabecera de sesión. Idempotente.

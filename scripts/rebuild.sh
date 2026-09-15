@@ -102,7 +102,7 @@ fi
 # varios GB de datos. Creamos el directorio de trabajo junto al destino de
 # salida, que se asume en disco real.
 OUT_DIR="$(cd "$(dirname "$OUT")" && pwd)"
-WORK="$(mktemp -d --tmpdir="$OUT_DIR" ie-galaxy-repack.XXXXXX)"
+WORK="$(mktemp -d --tmpdir="$OUT_DIR" ie-repack.XXXXXX)"
 cleanup() { [[ "$KEEP_WORK" -eq 1 ]] || rm -rf "$WORK"; }
 trap cleanup EXIT
 

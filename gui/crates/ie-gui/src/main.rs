@@ -12,5 +12,5 @@ fn main() -> eframe::Result<()> {
             .with_min_inner_size([640.0, 500.0]),
         ..Default::default()
     };
-    eframe::run_native("IE Galaxy Repack", opts, Box::new(|_| Ok(Box::new(App::default()))))
+    eframe::run_native("IE Repack", opts, Box::new(|_| Ok(Box::new(App::default()))))
 }
