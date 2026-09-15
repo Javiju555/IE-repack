@@ -1,3 +1,16 @@
+# IE Repack v0.2.0-beta.1 — modo Pack (IE 1-2-3 ES, en pruebas)
+
+**Versión de pruebas, no final.** Nuevo modo "Pack de traducción
+(manifiesto)": base japonesa (`.cia`/`.3ds`) + carpeta del pack
+(`manifiesto.json` + parches por fichero) → `.3ds` traducido. Verificado
+con el pack interno v57 de IE 1-2-3 ES (200/200 ficheros, arranque en
+español en Azahar). El modo Galaxy sigue igual.
+
+Si algo falla, adjunta `ie-galaxy-repack.log` (junto al programa) en un
+issue: https://github.com/Javiju555/ie-galaxy-repack/issues
+
+---
+
 # IE Galaxy Repack v0.1.0 — Galaxy Supernova en español, sin dramas
 
 Reconstruye una versión traducida y jugable de **Inazuma Eleven GO Galaxy:
@@ -18,7 +31,7 @@ Cargar archivo** en Azahar.
 1. Consigue tu CIA japonés del juego y el `.zip` del parche del blog.
 2. Ponlos junto al programa (los precarga solos) o elígelos con los botones.
 3. Pulsa **Crear .3ds en español**, espera al `OK` y carga el `.3ds` en Azahar.
-4. Hacen falta ~15 GB libres donde guardes la salida (mueve ~3 GB varias
+4. Hacen falta ~10 GB libres donde guardes la salida (mueve ~3 GB varias
    veces) y el proceso tarda de segundos a pocos minutos según el PC.
 
 ## Por qué existe

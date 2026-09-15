@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 #
+# SPDX-FileCopyrightText: 2026 Javiju
+#
+# SPDX-License-Identifier: MIT
+#
 # Rebuilds a translated, loadable Inazuma Eleven GO Galaxy CCI (.3ds) from:
 #   - your own decrypted Japanese CIA of the game, plus either:
 #     a) the public .xdelta patch (splice-decrypt + forced decode), or

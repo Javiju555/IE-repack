@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Javiju
+#
+# SPDX-License-Identifier: MIT
+
 name: CI
 
 on:
@@ -20,9 +24,11 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libx11-dev libxcursor-dev libxrandr-dev libxi-dev \
-            libgl1-mesa-dev libwayland-dev libxkbcommon-dev
+            libgl1-mesa-dev libwayland-dev libxkbcommon-dev xdelta3
       - name: script bash
         run: bash -n scripts/rebuild.sh && ./scripts/rebuild.sh --help
+      - name: licencias REUSE
+        run: pipx install reuse && reuse lint
       - name: tests núcleo (los dorados se saltan sin dumps)
         run: cargo test -p ie-core --manifest-path gui/Cargo.toml
       - name: tests GUI (incluye layout headless)
@@ -96,4 +102,5 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           body_path: .github/RELEASE_NOTES.md
+          prerelease: ${{ contains(github.ref, 'beta') }}
           files: dist/*

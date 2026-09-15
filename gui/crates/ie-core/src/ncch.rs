@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Javiju
+//
+// SPDX-License-Identifier: MIT
+
 //! Cabecera NCCH y descifrado AES-CTR.
 //!
 //! Replica exacta del comportamiento de `3dstool -x ... cxi` para el caso

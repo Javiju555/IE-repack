@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Javiju
+#
+# SPDX-License-Identifier: MIT
+
 import re, zlib, sys, os
 
 # Reutilizable: cambia cia_path a cualquier candidato nuevo que consigas y vuelve a correr.
