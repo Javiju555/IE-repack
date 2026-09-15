@@ -72,6 +72,7 @@ jobs:
           DIST="dist/ie-repack-${{ matrix.plat }}"
           mkdir -p "$DIST/sidecars/${{ matrix.plat }}"
           cp "gui/target/${{ matrix.target }}/release/${{ matrix.bin }}" "$DIST/"
+          cp gui/ie-repack.desktop "$DIST/"
           cp "gui/sidecars/${{ matrix.plat }}/"* "$DIST/sidecars/${{ matrix.plat }}/"
           cp LICENSE "$DIST/"
           cp gui/sidecars/README.md "$DIST/sidecars-LEEME.txt"
