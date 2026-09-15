@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Javiju
+//
+// SPDX-License-Identifier: MIT
+
 //! Ventana principal: elegir CIA + parche, lanzar el pipeline con progreso.
 
 use eframe::egui;
@@ -6,12 +10,58 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, mpsc};
 
+use crate::file_log;
+
 enum WorkerMsg {
     Progress(pipeline::StageProgress),
     Done(Result<(), String>),
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Mode {
+    /// Flujo Galaxy: CIA japonés + parche (forzado -n) -> CCI.
+    Galaxy,
+    /// Flujo pack: base CIA/.3ds + carpeta con manifiesto.json y parches
+    /// por fichero -> CCI. Recomendado para IE 1-2-3 ES (todo verificado).
+    Pack,
+    /// Flujo genérico: base CIA/CCI + cadena de parches estrictos -> CCI.
+    /// Para parches sobre .3ds descifrado canónico.
+    /// Experimental hasta validar con un dump real del juego en cuestión.
+    Generic,
+}
+
+impl Mode {
+    fn label(self) -> &'static str {
+        match self {
+            Mode::Galaxy => "Galaxy Supernova (CIA -> 3ds)",
+            Mode::Pack => "Pack de traducción (manifiesto)",
+            Mode::Generic => "Parche .3ds genérico (estricto, experimental)",
+        }
+    }
+
+    fn guide(self) -> &'static [&'static str] {
+        match self {
+            Mode::Galaxy => &[
+                "1. Elige tu CIA japonés de Galaxy Supernova.",
+                "2. Elige el parche (.xdelta o el .zip del blog).",
+                "3. Pulsa el botón y espera: sale un .3ds en español.",
+            ],
+            Mode::Pack => &[
+                "1. Elige tu base japonesa (.3ds descifrado; vale el .cia).",
+                "2. Elige la carpeta del pack (la que trae manifiesto.json).",
+                "3. Pulsa el botón y espera: cada fichero se verifica dos veces.",
+            ],
+            Mode::Generic => &[
+                "1. Elige tu base (.cia o .3ds).",
+                "2. Añade los .xdelta en orden de aplicación.",
+                "3. Opcional: pega los SHA que publique el proyecto.",
+            ],
+        }
+    }
+}
+
 pub struct App {
+    mode: Mode,
     base: Option<PathBuf>,
     base_info: String,
     base_ok: bool,
@@ -19,6 +69,21 @@ pub struct App {
     patch_info: String,
     patch_ok: bool,
     out: String,
+    // Estado del modo genérico.
+    g_base: Option<PathBuf>,
+    g_base_info: String,
+    g_base_ok: bool,
+    g_patches: Vec<PathBuf>,
+    g_sha: String,
+    g_sha_content: String,
+    // Estado del modo pack.
+    m_base: Option<PathBuf>,
+    m_base_info: String,
+    m_base_ok: bool,
+    m_pack: Option<PathBuf>,
+    m_pack_info: String,
+    m_pack_ok: bool,
+    log_path: PathBuf,
     running: bool,
     overall: f32,
     stage_label: String,
@@ -69,6 +134,7 @@ fn elide_middle(s: &str, max_chars: usize) -> String {
 impl Default for App {
     fn default() -> Self {
         let mut app = Self {
+            mode: Mode::Galaxy,
             base: None,
             base_info: "Sin seleccionar".into(),
             base_ok: false,
@@ -76,6 +142,19 @@ impl Default for App {
             patch_info: "Sin seleccionar".into(),
             patch_ok: false,
             out: String::new(),
+            g_base: None,
+            g_base_info: "Sin seleccionar".into(),
+            g_base_ok: false,
+            g_patches: Vec::new(),
+            g_sha: String::new(),
+            g_sha_content: String::new(),
+            m_base: None,
+            m_base_info: "Sin seleccionar".into(),
+            m_base_ok: false,
+            m_pack: None,
+            m_pack_info: "Sin seleccionar".into(),
+            m_pack_ok: false,
+            log_path: file_log::init(),
             running: false,
             overall: 0.0,
             stage_label: String::new(),
@@ -106,7 +185,9 @@ impl Default for App {
 
 impl App {
     fn push_log(&mut self, line: impl Into<String>) {
-        self.log.push(line.into());
+        let line = line.into();
+        file_log::line(&line);
+        self.log.push(line);
         if self.log.len() > 400 {
             let excess = self.log.len() - 400;
             self.log.drain(..excess);
@@ -150,7 +231,160 @@ impl App {
         }
     }
 
+    fn set_g_base(&mut self, path: PathBuf) {
+        self.g_base = Some(path.clone());
+        self.result = None;
+        match describe_any(&path) {
+            Ok(info) => {
+                self.g_base_info = info.clone();
+                self.g_base_ok = true;
+                self.push_log(format!("Base: {} ({info})", path.display()));
+                if self.out.is_empty() {
+                    self.out = default_out(&path);
+                }
+            }
+            Err(e) => {
+                self.g_base_info = format!("No válido: {e}");
+                self.g_base_ok = false;
+                self.push_log(format!("Base rechazada ({}): {e}", path.display()));
+            }
+        }
+    }
+
+    fn add_g_patches(&mut self, paths: Vec<PathBuf>) {
+        for p in paths {
+            if p.extension().and_then(|e| e.to_str()).map(|e| e.eq_ignore_ascii_case("xdelta") || e.eq_ignore_ascii_case("zip")).unwrap_or(false) {
+                if !self.g_patches.contains(&p) {
+                    self.g_patches.push(p.clone());
+                    self.push_log(format!("Parche añadido: {}", p.display()));
+                }
+            } else {
+                self.push_log(format!("Ignorado ({}): se esperaba .xdelta / .zip", p.display()));
+            }
+        }
+        self.g_patches.sort();
+        self.result = None;
+    }
+
+    fn set_m_base(&mut self, path: PathBuf) {
+        self.m_base = Some(path.clone());
+        self.result = None;
+        match describe_any(&path) {
+            Ok(info) => {
+                self.m_base_info = info.clone();
+                self.m_base_ok = true;
+                self.push_log(format!("Base: {} ({info})", path.display()));
+                if self.out.is_empty() {
+                    self.out = default_out(&path);
+                }
+            }
+            Err(e) => {
+                self.m_base_info = format!("No válido: {e}");
+                self.m_base_ok = false;
+                self.push_log(format!("Base rechazada ({}): {e}", path.display()));
+            }
+        }
+    }
+
+    fn set_m_pack(&mut self, dir: PathBuf) {
+        self.m_pack = Some(dir.clone());
+        self.result = None;
+        match ie_core::manifest::describe(&dir) {
+            Ok(info) => {
+                self.m_pack_info = info.clone();
+                self.m_pack_ok = true;
+                self.push_log(format!("Pack: {} ({info})", dir.display()));
+            }
+            Err(e) => {
+                self.m_pack_info = format!("No válido: {e}");
+                self.m_pack_ok = false;
+                self.push_log(format!("Pack rechazado ({}): {e}", dir.display()));
+            }
+        }
+    }
+
+    fn manifest_ready(&self) -> String {
+        if !self.m_base_ok {
+            return "falta una base válida".into();
+        }
+        if !self.m_pack_ok {
+            return "falta un pack válido (carpeta con manifiesto.json)".into();
+        }
+        if self.out.trim().is_empty() {
+            return "falta la salida".into();
+        }
+        String::new()
+    }
+
+    /// Rama pack: base + carpeta de pack con manifiesto. Sin temporales de
+    /// parches sueltos: el manifiesto ya trae las rutas relativas.
+    fn start_manifest(&mut self) {
+        let problem = self.manifest_ready();
+        if !problem.is_empty() {
+            self.result = Some(Err(problem));
+            return;
+        }
+        let base = self.m_base.clone().unwrap();
+        let pack = self.m_pack.clone().unwrap();
+        if self.out.trim().is_empty() {
+            self.out = default_out(&base);
+        }
+        let out = PathBuf::from(self.out.trim());
+        if let Some(parent) = out.parent() {
+            if !parent.as_os_str().is_empty() && std::fs::create_dir_all(parent).is_err() {
+                self.result = Some(Err("no se puede crear la carpeta de salida".into()));
+                return;
+            }
+        }
+        self.running = true;
+        self.overall = 0.0;
+        self.result = None;
+        self.last_logged_stage = None;
+        self.cancel = Arc::new(AtomicBool::new(false));
+        let (tx, rx) = mpsc::channel();
+        self.rx = Some(rx);
+        let cancel = self.cancel.clone();
+        self.push_log(format!("Pack {} sobre {} ...", pack.display(), base.display()));
+        std::thread::spawn(move || {
+            let r = pipeline::run_manifest(
+                &pipeline::ManifestInputs { base, pack_dir: pack, out_cci: out, keep_work: false },
+                &cancel,
+                &mut |p| {
+                    tx.send(WorkerMsg::Progress(p)).ok();
+                },
+            );
+            let _ = tx.send(WorkerMsg::Done(r.map_err(|e| friendly_error(&e))));
+        });
+    }
+
+    fn generic_ready(&self) -> String {
+        if !self.g_base_ok {
+            return "falta una base válida".into();
+        }
+        if self.g_patches.is_empty() {
+            return "falta al menos un parche".into();
+        }
+        for (tag, s) in [("SHA-256", &self.g_sha), ("SHA-256 de contenido", &self.g_sha_content)] {
+            let t = s.trim();
+            if !t.is_empty() && !(t.len() == 64 && t.chars().all(|c| c.is_ascii_hexdigit())) {
+                return format!("{tag}: deben ser 64 hex o vacío");
+            }
+        }
+        if self.out.trim().is_empty() {
+            return "falta la salida".into();
+        }
+        String::new()
+    }
+
     fn start(&mut self) {
+        if self.mode == Mode::Pack {
+            self.start_manifest();
+            return;
+        }
+        if self.mode == Mode::Generic {
+            self.start_generic();
+            return;
+        }
         let (base, patch) = match (self.base.clone(), self.patch.clone()) {
             (Some(b), Some(p)) => (b, p),
             _ => return,
@@ -183,6 +417,83 @@ impl App {
                     tx.send(WorkerMsg::Progress(p)).ok();
                 },
             );
+            let _ = tx.send(WorkerMsg::Done(r.map_err(|e| friendly_error(&e))));
+        });
+    }
+
+    /// Rama genérica: base CIA/CCI + cadena estricta. Los .zip se resuelven a
+    /// su único .xdelta en un temporal junto a la salida.
+    fn start_generic(&mut self) {
+        let problem = self.generic_ready();
+        if !problem.is_empty() {
+            self.result = Some(Err(problem));
+            return;
+        }
+        let base = self.g_base.clone().unwrap();
+        let patches_in = self.g_patches.clone();
+        if self.out.trim().is_empty() {
+            self.out = default_out(&base);
+        }
+        let out = PathBuf::from(self.out.trim());
+        if let Some(parent) = out.parent() {
+            if !parent.as_os_str().is_empty() && std::fs::create_dir_all(parent).is_err() {
+                self.result = Some(Err("no se puede crear la carpeta de salida".into()));
+                return;
+            }
+        }
+        self.running = true;
+        self.overall = 0.0;
+        self.result = None;
+        self.last_logged_stage = None;
+        self.cancel = Arc::new(AtomicBool::new(false));
+        let (tx, rx) = mpsc::channel();
+        self.rx = Some(rx);
+        let cancel = self.cancel.clone();
+        let sha = self.g_sha.trim().to_owned();
+        let sha_content = self.g_sha_content.trim().to_owned();
+        self.push_log(format!("Procesando {} con {} parche(s) ...", base.display(), patches_in.len()));
+        std::thread::spawn(move || {
+            let r = (|| -> Result<(), ie_core::error::Error> {
+                // Temporal para los .xdelta extraídos de zips.
+                let pid = std::process::id();
+                let nanos = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_nanos())
+                    .unwrap_or(0);
+                let unpack = out.parent()
+                    .filter(|p| !p.as_os_str().is_empty())
+                    .map(|p| p.to_path_buf())
+                    .unwrap_or_else(|| PathBuf::from("."))
+                    .join(format!(".ie-patches-{pid}-{nanos:x}"));
+                std::fs::create_dir_all(&unpack)?;
+                let mut patches = Vec::with_capacity(patches_in.len());
+                for (i, p) in patches_in.iter().enumerate() {
+                    let is_zip = p.extension().map(|e| e.eq_ignore_ascii_case("zip")).unwrap_or(false);
+                    if is_zip {
+                        let dest = unpack.join(format!("patch{i}.xdelta"));
+                        ie_core::pipeline::extract_single_xdelta(p, &dest, &cancel)?;
+                        patches.push(dest);
+                    } else {
+                        patches.push(p.clone());
+                    }
+                }
+                let r = pipeline::run_strict(
+                    &pipeline::StrictInputs {
+                        base,
+                        patches,
+                        expected_sha256: if sha.is_empty() { None } else { Some(sha) },
+                        expected_content_sha256: if sha_content.is_empty() { None } else { Some(sha_content) },
+                        out_cci: out,
+                        keep_work: false,
+                    },
+                    &cancel,
+                    &mut |p| {
+                        tx.send(WorkerMsg::Progress(p)).ok();
+                    },
+                );
+                std::fs::remove_dir_all(&unpack).ok();
+                r
+            })();
             let _ = tx.send(WorkerMsg::Done(r.map_err(|e| friendly_error(&e))));
         });
     }
@@ -236,6 +547,31 @@ impl App {
     }
 }
 
+/// Describe base CIA o CCI: producto, título y estado de cifrado.
+fn describe_any(path: &PathBuf) -> Result<String, String> {
+    match ie_core::normalize::detect(path).map_err(|e| e.to_string())? {
+        ie_core::normalize::InputKind::Cia => {
+            let info = describe_cia(path)?;
+            let layout = ie_core::cia::read_layout(path).map_err(|e| e.to_string())?;
+            let c0 = layout.content(0).map_err(|e| e.to_string())?;
+            let hdr = read_ncch(path, c0.offset)?;
+            let state = if hdr.is_decrypted() { "descifrado" } else { "cifrado" };
+            Ok(format!("CIA {info} [{state}]"))
+        }
+        ie_core::normalize::InputKind::Cci => {
+            let parts = ie_core::cci::partitions(path).map_err(|e| e.to_string())?;
+            let (p0, _) = *parts.first().ok_or("CCI sin particiones")?;
+            let hdr = read_ncch(path, p0)?;
+            let code = hdr.product_code();
+            if code.is_empty() {
+                return Err("no parece un CCI de 3DS".into());
+            }
+            let state = if hdr.is_decrypted() { "descifrado" } else { "cifrado" };
+            Ok(format!("3ds {code}, TitleId {:016X} [{state}]", hdr.title_id()))
+        }
+    }
+}
+
 /// Lee TitleId y código de producto del content0 sin descifrar nada.
 fn describe_cia(path: &PathBuf) -> Result<String, String> {
     let layout = ie_core::cia::read_layout(path).map_err(|e| e.to_string())?;
@@ -249,6 +585,8 @@ fn describe_cia(path: &PathBuf) -> Result<String, String> {
         "Supernova"
     } else if code.contains("BGBJ") {
         "Big Bang (no probado)"
+    } else if code.contains("AETJ") {
+        "Inazuma Eleven 1-2-3"
     } else {
         "juego desconocido"
     };
@@ -316,6 +654,193 @@ fn friendly_error(e: &ie_core::error::Error) -> String {
     }
 }
 
+impl App {
+    /// Panel del modo Galaxy (dos tarjetas en horizontal).
+    fn ui_galaxy(&mut self, ui: &mut egui::Ui) {
+        let b_short = self.base.as_ref().map(short_name);
+        let b_full = self.base.as_ref().map(|p| p.display().to_string());
+        let p_short = self.patch.as_ref().map(short_name);
+        let p_full = self.patch.as_ref().map(|p| p.display().to_string());
+        let (b_info, b_ok) = (self.base_info.clone(), self.base_ok);
+        let (p_info, p_ok) = (self.patch_info.clone(), self.patch_ok);
+        let running = self.running;
+        let mut pick_base = false;
+        let mut pick_patch = false;
+        ui.columns(2, |cols| {
+            pick_base = file_card(
+                &mut cols[0],
+                "1. CIA japonés",
+                b_short.as_deref(),
+                b_full.as_deref(),
+                &b_info,
+                b_ok,
+                "Elegir .cia...",
+                running,
+            );
+            pick_patch = file_card(
+                &mut cols[1],
+                "2. Parche ES",
+                p_short.as_deref(),
+                p_full.as_deref(),
+                &p_info,
+                p_ok,
+                "Elegir .xdelta/.zip...",
+                running,
+            );
+        });
+        if pick_base {
+            if let Some(p) = rfd::FileDialog::new().add_filter("CIA de 3DS", &["cia"]).pick_file() {
+                self.set_base(p);
+            }
+        }
+        if pick_patch {
+            if let Some(p) = rfd::FileDialog::new().add_filter("Parche", &["xdelta", "zip"]).pick_file() {
+                self.set_patch(p);
+            }
+        }
+    }
+
+    /// Panel del modo pack: base CIA/CCI + carpeta del pack (manifiesto).
+    fn ui_pack(&mut self, ui: &mut egui::Ui) {
+        let b_short = self.m_base.as_ref().map(short_name);
+        let b_full = self.m_base.as_ref().map(|p| p.display().to_string());
+        let (b_info, b_ok) = (self.m_base_info.clone(), self.m_base_ok);
+        let p_short = self.m_pack.as_ref().map(short_name);
+        let p_full = self.m_pack.as_ref().map(|p| p.display().to_string());
+        let (p_info, p_ok) = (self.m_pack_info.clone(), self.m_pack_ok);
+        let running = self.running;
+        let mut pick_base = false;
+        let mut pick_pack = false;
+        ui.columns(2, |cols| {
+            pick_base = file_card(
+                &mut cols[0],
+                "1. Base (.cia/.3ds japonés)",
+                b_short.as_deref(),
+                b_full.as_deref(),
+                &b_info,
+                b_ok,
+                "Elegir base...",
+                running,
+            );
+            pick_pack = file_card(
+                &mut cols[1],
+                "2. Pack de traducción",
+                p_short.as_deref(),
+                p_full.as_deref(),
+                &p_info,
+                p_ok,
+                "Elegir carpeta...",
+                running,
+            );
+        });
+        if pick_base {
+            if let Some(p) = rfd::FileDialog::new()
+                .add_filter("Base 3DS", &["cia", "3ds", "cci"])
+                .pick_file()
+            {
+                self.set_m_base(p);
+            }
+        }
+        if pick_pack {
+            if let Some(p) = rfd::FileDialog::new().pick_folder() {
+                self.set_m_pack(p);
+            }
+        }
+    }
+
+    /// Panel del modo genérico: base CIA/CCI + lista de parches + SHA opcional.
+    fn ui_generic(&mut self, ui: &mut egui::Ui) {
+        let g_short = self.g_base.as_ref().map(short_name);
+        let g_full = self.g_base.as_ref().map(|p| p.display().to_string());
+        let (g_info, g_ok) = (self.g_base_info.clone(), self.g_base_ok);
+        let patches: Vec<String> = self.g_patches.iter().map(short_name).collect();
+        let running = self.running;
+        let mut pick_base = false;
+        let mut add_patches = false;
+        let mut clear_patches = false;
+        let mut remove_idx: Option<usize> = None;
+        ui.columns(2, |cols| {
+            pick_base = file_card(
+                &mut cols[0],
+                "1. Base (.cia/.3ds)",
+                g_short.as_deref(),
+                g_full.as_deref(),
+                &g_info,
+                g_ok,
+                "Elegir base...",
+                running,
+            );
+            // Tarjeta de parches con lista ordenada y borrado por fila.
+            egui::Frame::group(cols[1].style()).inner_margin(12.0).show(&mut cols[1], |ui| {
+                ui.strong("2. Parches (.xdelta, en orden)");
+                ui.add_space(4.0);
+                if patches.is_empty() {
+                    ui.weak("(sin añadir)");
+                } else {
+                    for (i, name) in patches.iter().enumerate() {
+                        ui.horizontal(|ui| {
+                            ui.monospace(format!("{}. {}", i + 1, name));
+                            if ui.add_enabled(!running, egui::Button::new("×").small()).clicked() {
+                                remove_idx = Some(i);
+                            }
+                        });
+                    }
+                }
+                ui.add_space(6.0);
+                ui.horizontal(|ui| {
+                    if ui.add_enabled(!running, egui::Button::new("Añadir...")).clicked() {
+                        add_patches = true;
+                    }
+                    if ui.add_enabled(!running && !patches.is_empty(), egui::Button::new("Limpiar")).clicked() {
+                        clear_patches = true;
+                    }
+                });
+            });
+        });
+        if pick_base {
+            if let Some(p) = rfd::FileDialog::new()
+                .add_filter("Base 3DS", &["cia", "3ds", "cci"])
+                .pick_file()
+            {
+                self.set_g_base(p);
+            }
+        }
+        if add_patches {
+            if let Some(ps) = rfd::FileDialog::new().add_filter("Parche", &["xdelta", "zip"]).pick_files() {
+                self.add_g_patches(ps);
+            }
+        }
+        if clear_patches {
+            self.g_patches.clear();
+            self.result = None;
+            self.push_log("Lista de parches vaciada.");
+        }
+        if let Some(i) = remove_idx {
+            if i < self.g_patches.len() {
+                let p = self.g_patches.remove(i);
+                self.result = None;
+                self.push_log(format!("Parche quitado: {}", p.display()));
+            }
+        }
+        // SHA esperado (opcional) + SHA de contenido (opcional, sin cabecera).
+        ui.add_space(4.0);
+        ui.horizontal(|ui| {
+            ui.label("SHA-256 esperado (opcional):");
+            ui.add_enabled(
+                !self.running,
+                egui::TextEdit::singleline(&mut self.g_sha).desired_width(460.0).hint_text("64 hex del .3ds final, si el proyecto lo publica"),
+            );
+        });
+        ui.horizontal(|ui| {
+            ui.label("SHA-256 de contenido (opcional):");
+            ui.add_enabled(
+                !self.running,
+                egui::TextEdit::singleline(&mut self.g_sha_content).desired_width(460.0).hint_text("64 hex desde el byte 0x200; vale para bases convertidas"),
+            );
+        });
+    }
+}
+
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.pump();
@@ -325,52 +850,41 @@ impl eframe::App for App {
 
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.add_space(6.0);
-            ui.heading("Inazuma Eleven GO Galaxy - parcheador ES");
-            ui.label("Tu CIA japonés + el parche público -> .3ds en español listo para Azahar.");
+            ui.heading("IE Repack - parcheador ES");
+            let subtitle = match self.mode {
+                Mode::Galaxy => "Tu CIA japonés de Galaxy + el parche público -> .3ds en español listo para Azahar.",
+                Mode::Pack => "Tu base japonesa + el pack de traducción -> .3ds en español listo para Azahar.",
+                Mode::Generic => "Tu base + cadena de parches estrictos -> .3ds listo para Azahar.",
+            };
+            ui.label(subtitle);
             ui.label(egui::RichText::new("No necesitas instalar nada más: la app trae todo lo necesario.").small());
             ui.add_space(8.0);
 
-            // Dos tarjetas en horizontal. (Los diálogos se abren fuera de las
-            // columnas: los closures no pueden prestar `self` dos veces.)
-            let b_short = self.base.as_ref().map(short_name);
-            let b_full = self.base.as_ref().map(|p| p.display().to_string());
-            let p_short = self.patch.as_ref().map(short_name);
-            let p_full = self.patch.as_ref().map(|p| p.display().to_string());
-            let (b_info, b_ok) = (self.base_info.clone(), self.base_ok);
-            let (p_info, p_ok) = (self.patch_info.clone(), self.patch_ok);
-            let mut pick_base = false;
-            let mut pick_patch = false;
-            ui.columns(2, |cols| {
-                pick_base = file_card(
-                    &mut cols[0],
-                    "1. CIA japonés",
-                    b_short.as_deref(),
-                    b_full.as_deref(),
-                    &b_info,
-                    b_ok,
-                    "Elegir .cia...",
-                    self.running,
-                );
-                pick_patch = file_card(
-                    &mut cols[1],
-                    "2. Parche ES",
-                    p_short.as_deref(),
-                    p_full.as_deref(),
-                    &p_info,
-                    p_ok,
-                    "Elegir .xdelta/.zip...",
-                    self.running,
-                );
+            // Selector de modo.
+            ui.horizontal(|ui| {
+                ui.strong("Modo:");
+                let before = self.mode;
+                egui::ComboBox::from_id_salt("mode")
+                    .selected_text(self.mode.label())
+                    .show_ui(ui, |ui| {
+                        ui.selectable_value(&mut self.mode, Mode::Galaxy, Mode::Galaxy.label());
+                        ui.selectable_value(&mut self.mode, Mode::Pack, Mode::Pack.label());
+                        ui.selectable_value(&mut self.mode, Mode::Generic, Mode::Generic.label());
+                    });
+                if before != self.mode {
+                    // Cambiar de modo no mezcla estados: resetea progreso/resultado.
+                    self.overall = 0.0;
+                    self.result = None;
+                    self.stage_label.clear();
+                    self.stage_detail.clear();
+                }
             });
-            if pick_base {
-                if let Some(p) = rfd::FileDialog::new().add_filter("CIA de 3DS", &["cia"]).pick_file() {
-                    self.set_base(p);
-                }
-            }
-            if pick_patch {
-                if let Some(p) = rfd::FileDialog::new().add_filter("Parche", &["xdelta", "zip"]).pick_file() {
-                    self.set_patch(p);
-                }
+            ui.add_space(4.0);
+
+            match self.mode {
+                Mode::Galaxy => self.ui_galaxy(ui),
+                Mode::Pack => self.ui_pack(ui),
+                Mode::Generic => self.ui_generic(ui),
             }
             ui.add_space(8.0);
 
@@ -382,9 +896,14 @@ impl eframe::App for App {
                     ui.strong("3. Guardar .3ds en:");
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if ui.button("Examinar...").clicked() && !self.running {
+                            let suggest = match self.mode {
+                                Mode::Galaxy => "galaxy_esp.3ds",
+                                Mode::Pack => "juego_esp.3ds",
+                                Mode::Generic => "juego_parcheado.3ds",
+                            };
                             if let Some(p) = rfd::FileDialog::new()
                                 .add_filter("Imagen 3DS", &["3ds"])
-                                .set_file_name("galaxy_esp.3ds")
+                                .set_file_name(suggest)
                                 .save_file()
                             {
                                 self.out = p.to_string_lossy().into_owned();
@@ -398,9 +917,22 @@ impl eframe::App for App {
             ui.add_space(8.0);
 
             // Acción + progreso.
-            let ready = self.base_ok && self.patch_ok && !self.out.trim().is_empty() && !self.running;
+            let (ready, action) = match self.mode {
+                Mode::Galaxy => (
+                    self.base_ok && self.patch_ok && !self.out.trim().is_empty() && !self.running,
+                    "Crear .3ds en español",
+                ),
+                Mode::Pack => (
+                    self.m_base_ok && self.m_pack_ok && self.manifest_ready().is_empty() && !self.running,
+                    "Aplicar pack",
+                ),
+                Mode::Generic => (
+                    self.g_base_ok && !self.g_patches.is_empty() && self.generic_ready().is_empty() && !self.running,
+                    "Aplicar parches",
+                ),
+            };
             ui.horizontal(|ui| {
-                if ui.add_enabled(ready, egui::Button::new("Crear .3ds en español").min_size(egui::vec2(220.0, 38.0))).clicked() {
+                if ui.add_enabled(ready, egui::Button::new(action).min_size(egui::vec2(220.0, 38.0))).clicked() {
                     self.start();
                 }
                 if self.running && ui.button("Cancelar").clicked() {
@@ -437,6 +969,14 @@ impl eframe::App for App {
             }
             ui.add_space(4.0);
 
+            // Mini-guía del modo activo.
+            ui.collapsing("¿Cómo se usa?", |ui| {
+                for line in self.mode.guide() {
+                    ui.label(*line);
+                }
+            });
+            ui.add_space(4.0);
+
             // Log.
             ui.collapsing("Registro", |ui| {
                 egui::ScrollArea::vertical().max_height(130.0).stick_to_bottom(true).show(ui, |ui| {
@@ -444,6 +984,35 @@ impl eframe::App for App {
                         ui.monospace(line);
                     }
                 });
+            });
+            ui.add_space(4.0);
+
+            // Pie: proyecto de hobby + dónde llorar si falla.
+            ui.separator();
+            ui.label(egui::RichText::new(
+                "Proyecto de hobby hecho con amor por un fan (Javiju555). Puede fallar: \
+                 si algo sale mal, adjunta el log (ie-galaxy-repack.log, junto al programa) \
+                 al abrir un issue o avisa en el hilo de la traducción.",
+            )
+            .small()
+            .weak());
+            ui.horizontal(|ui| {
+                if ui.small_button("Abrir carpeta del log").clicked() {
+                    let dir = self
+                        .log_path
+                        .parent()
+                        .filter(|d| !d.as_os_str().is_empty())
+                        .map(|d| d.to_path_buf())
+                        .unwrap_or_else(|| PathBuf::from("."));
+                    if open::that_detached(&dir).is_err() {
+                        self.push_log(format!("No se pudo abrir la carpeta: {}", dir.display()));
+                    }
+                }
+                if ui.small_button("Abrir issues en GitHub").clicked() {
+                    if open::that_detached("https://github.com/Javiju555/ie-galaxy-repack/issues").is_err() {
+                        self.push_log("No se pudo abrir el navegador.");
+                    }
+                }
             });
         });
     }
@@ -518,48 +1087,84 @@ mod tests {
         assert!(corto.ends_with("(Japan).cia"));
     }
 
-    /// La UI completa con rutas largas cabe en 780 px: ningún nodo visible
-    /// puede salirse por la derecha (este era el bug reportado).
+    /// La UI completa con rutas largas cabe en 780 px en ambos modos: ningún
+    /// nodo visible puede salirse por la derecha (este era el bug reportado).
     #[test]
     fn layout_cabe_en_ventana() {
         use egui_kittest::kittest::Queryable;
-        let mut app = App::default();
-        let base = PathBuf::from("/home/javiju/Juegos/IE-Galaxy-ES/Inazuma Eleven Go Galaxy - Supernova (Japan).cia");
-        app.base = Some(base);
-        app.base_info = "CTR-P-BGSJ [Supernova]".into();
-        app.base_ok = true;
-        app.patch = Some(PathBuf::from("/home/javiju/Juegos/IE-Galaxy-ES/IEGOGalaxySN parche 1.0.5.zip"));
-        app.patch_info = "zip con el parche dentro (1384 MB)".into();
-        app.patch_ok = true;
-        app.out = "/home/javiju/Juegos/IE-Galaxy-ES/Inazuma Eleven Go Galaxy - Supernova (Japan)_ESP.3ds".into();
-        app.overall = 1.0;
-        app.stage_label = "Etapa 7/7: Completado".into();
-        app.result = Some(Ok("Listo: /home/javiju/Juegos/IE-Galaxy-ES/x.3ds".into()));
-        for i in 0..6 {
-            app.push_log(format!("Línea {i} /home/javiju/Juegos/IE-Galaxy-ES/Inazuma Eleven Go Galaxy - Supernova (Japan).cia"));
-        }
-        let h = egui_kittest::Harness::new_eframe(|_cc| app);
-        let mut h = h;
-        h.set_size(egui::vec2(780.0, 600.0));
-        h.run();
-        let mut bad = Vec::new();
-        for n in h.query_all_by(|_| true) {
-            if n.is_hidden() {
-                continue;
-            }
-            if let Some(r) = n.bounding_box() {
-                if r.x1 > 780.0 + 1.0 {
-                    bad.push(format!(
-                        "{:?} label={:?} value={:?} x0={:.0} x1={:.0}",
-                        n.role(),
-                        n.label(),
-                        n.value(),
-                        r.x0,
-                        r.x1
-                    ));
+        fn check(app: App, what: &str) {
+            let h = egui_kittest::Harness::new_eframe(|_cc| app);
+            let mut h = h;
+            h.set_size(egui::vec2(780.0, 600.0));
+            h.run();
+            let mut bad = Vec::new();
+            for n in h.query_all_by(|_| true) {
+                if n.is_hidden() {
+                    continue;
+                }
+                if let Some(r) = n.bounding_box() {
+                    if r.x1 > 780.0 + 1.0 {
+                        bad.push(format!(
+                            "{:?} label={:?} value={:?} x0={:.0} x1={:.0}",
+                            n.role(),
+                            n.label(),
+                            n.value(),
+                            r.x0,
+                            r.x1
+                        ));
+                    }
                 }
             }
+            assert!(bad.is_empty(), "{what}: widgets fuera: {bad:?}");
         }
-        assert!(bad.is_empty(), "widgets fuera de la ventana: {bad:?}");
+
+        // Estado Galaxy completado, rutas largas.
+        let mut g = App::default();
+        g.base = Some(PathBuf::from("/home/javiju/Juegos/IE-Galaxy-ES/Inazuma Eleven Go Galaxy - Supernova (Japan).cia"));
+        g.base_info = "CTR-P-BGSJ [Supernova]".into();
+        g.base_ok = true;
+        g.patch = Some(PathBuf::from("/home/javiju/Juegos/IE-Galaxy-ES/IEGOGalaxySN parche 1.0.5.zip"));
+        g.patch_info = "zip con el parche dentro (1384 MB)".into();
+        g.patch_ok = true;
+        g.out = "/home/javiju/Juegos/IE-Galaxy-ES/Inazuma Eleven Go Galaxy - Supernova (Japan)_ESP.3ds".into();
+        g.overall = 1.0;
+        g.stage_label = "Etapa 7/7: Completado".into();
+        g.result = Some(Ok("Listo: /home/javiju/Juegos/IE-Galaxy-ES/x.3ds".into()));
+        for i in 0..6 {
+            g.push_log(format!("Línea {i} /home/javiju/Juegos/IE-Galaxy-ES/Inazuma Eleven Go Galaxy - Supernova (Japan).cia"));
+        }
+        check(g, "galaxy");
+
+        // Estado genérico con cadena de 2 parches y SHA.
+        let mut x = App::default();
+        x.mode = Mode::Generic;
+        x.g_base = Some(PathBuf::from("/home/javiju/Juegos/IE123/Inazuma Eleven 1-2-3 - Endou Mamoru Densetsu.3ds"));
+        x.g_base_info = "3ds CTR-P-AETJ, TitleId 00040000000EDF00 [descifrado]".into();
+        x.g_base_ok = true;
+        x.g_patches = vec![
+            PathBuf::from("/home/javiju/Juegos/IE123/inazuma123-es-v1.xdelta"),
+            PathBuf::from("/home/javiju/Juegos/IE123/inazuma123-es-v1.1-update.xdelta"),
+        ];
+        x.g_sha = "aa5a9f6c5da4a2a98eb5dde97ceba51fa350cbff6f406893d5e08d515b9fd1e9".into();
+        x.out = "/home/javiju/Juegos/IE123/inazuma123_es_v1.1.3ds".into();
+        x.overall = 0.6;
+        x.stage_label = "Etapa 4/6: Aplicando parches".into();
+        x.stage_detail = "1200 / 2000 MB".into();
+        check(x, "generico");
+
+        // Estado pack con base larga y pack largo.
+        let mut m = App::default();
+        m.mode = Mode::Pack;
+        m.m_base = Some(PathBuf::from("/home/javiju/Juegos/IE123/Inazuma Eleven 1-2-3 - Endou Mamoru Densetsu.3ds"));
+        m.m_base_info = "3ds CTR-P-AETJ, TitleId 00040000000EDF00 [descifrado]".into();
+        m.m_base_ok = true;
+        m.m_pack = Some(PathBuf::from("/home/javiju/Juegos/IE123/paquete_v55_con_un_nombre_muy_largo_para_probar"));
+        m.m_pack_info = "v57-interna · 200 ficheros · base: Inazuma Eleven 1·2·3!! Endō Mamoru Densetsu".into();
+        m.m_pack_ok = true;
+        m.out = "/home/javiju/Juegos/IE123/inazuma123_es_v55_desde_modo_pack_con_nombre_largo.3ds".into();
+        m.overall = 0.4;
+        m.stage_label = "Etapa 4/7: Aplicando parches".into();
+        m.stage_detail = "800 / 1700 MB".into();
+        check(m, "pack");
     }
 }

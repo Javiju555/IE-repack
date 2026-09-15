@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Javiju
+#
+# SPDX-License-Identifier: MIT
+
 [package]
 name = "ie-gui"
 version = "0.1.0"

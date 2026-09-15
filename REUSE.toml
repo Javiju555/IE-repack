@@ -1,0 +1,33 @@
+version = 1
+SPDX-PackageName = "ie-galaxy-repack"
+SPDX-PackageSupplier = "Javiju555"
+
+[[annotations]]
+path = "gui/sidecars/**/xdelta3**"
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2001-2026, Joshua MacDonald and contributors"
+SPDX-License-Identifier = "Apache-2.0"
+
+[[annotations]]
+path = ["gui/sidecars/**/LICENSE", "LICENSES/Apache-2.0.txt"]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2001-2026, Joshua MacDonald and contributors"
+SPDX-License-Identifier = "Apache-2.0"
+
+[[annotations]]
+path = "gui/crates/ie-core/src/ncsd_rsa_filler.bin"
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026, ie-galaxy-repack contributors"
+SPDX-License-Identifier = "LicenseRef-MakeromOutput"
+
+[[annotations]]
+path = ["LICENSE", "LICENSES/MIT.txt", "**.md", "gui/**.md", "gui/**/**.md", "investigacion/**.md", ".github/**.md", "docs/**", ".gitignore", "investigacion/parche_SN_windows.log"]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026, Javiju"
+SPDX-License-Identifier = "MIT"
+
+[[annotations]]
+path = ["gui/Cargo.lock", "gui/Cargo.toml", "gui/crates/**/Cargo.toml"]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026, Javiju"
+SPDX-License-Identifier = "MIT"
