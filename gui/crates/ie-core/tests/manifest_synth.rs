@@ -168,6 +168,11 @@ fn pack_sintetico_end_to_end() {
     let media = 1u64 << (nh[0x18E] + 9);
     let rmo = u32::from_le_bytes(nh[0x1B0..0x1B4].try_into().unwrap()) as u64 * media;
     let rms = u32::from_le_bytes(nh[0x1B4..0x1B8].try_into().unwrap()) as u64 * media;
+    // Content size == partición 0 (lo que mira GodMode9/consola).
+    let csize = u32::from_le_bytes(nh[0x104..0x108].try_into().unwrap()) as u64 * media;
+    let (pp0, pp0len) = cci::partitions(&out).unwrap()[0];
+    assert_eq!(p0, pp0);
+    assert_eq!(csize, pp0len, "NCCH content size debe igualar la partición");
     let mut blob = vec![0u8; rms as usize];
     f.seek(SeekFrom::Start(p0 + rmo)).unwrap();
     f.read_exact(&mut blob).unwrap();

@@ -196,7 +196,24 @@ dorado (hashes de `ie6_a.fa`/`ie6_b.fa`).
   estándar (superblock sí verifica); Azahar no lo exige — anotado como
   riesgo HW, a revalidar con el set real.
 
-## v55/v57 INTEGRADO Y VERIFICADO 2026-09-15 (paquete_v55.rar, 79 MB)
+## Informe GodMode9 (2026-09-16): tamaños + disección IVFC
+
+- El informe confirma el `0x104` (content size) viejo en nuestra salida:
+  implementado (igual a p0) + assert en `manifest_synth` + e2e verde + boot.
+- Localizado el L2 real (hashes SHA por bloque de 0x1000, verificado por
+  bordes): X=[0x14A000, 0x712C2000), L2=[0x712DF000, 0x72101F00) =
+  exactamente 0xE22F00 del superblock. Los apéndices (desde 0x72102000)
+  no lo pisan: 256 B de margen. El pánico del solape eran fantasmas
+  aritméticos.
+- Leído el fuente de GodMode9 (`VerifyNcchFile`/`VerifyNcsdFile`,
+  `GetRomFsLvOffset`): el verify a fondo NO puede pasar en este juego ni
+  en original (master de 1 hash para un L1 de 28 bloques: over-read de
+  heap) — coherente con que su dump limpio tampoco pasa. La consola, en
+  cambio, arranca sin pasear el árbol (probado por su vía DeltaPatcher).
+- Decisión: solo tamaños (NCCH 0x104 + 0x1B4 ya hecho + NCSD). El L3size
+  del IVFC se deja aposta como estaba (agrandarlo rompería la coherencia
+  de cobertura L2 que hoy pasa) y no se rehashea nada: boot no lo necesita
+  y GodMode9 no puede pasar de todas formas.
 
 - Formato: xdelta por fichero + `manifiesto.json` (ruta, sizes y SHA-256
   original/resultado). 200 ficheros: archive.fa, cro/ina_main1.cro,
