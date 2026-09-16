@@ -1,0 +1,40 @@
+# SPDX-FileCopyrightText: 2026 Javiju
+#
+# SPDX-License-Identifier: MIT
+
+name: Fallo de la app
+description: La app ha fallado o ha dado un error
+labels: [bug]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Versión (arriba a la derecha de la app)
+      placeholder: v0.2.0-beta.2
+    validations:
+      required: true
+  - type: dropdown
+    id: modo
+    attributes:
+      label: Modo
+      options:
+        - Galaxy Supernova
+        - Pack (manifiesto)
+        - Xdelta estricto
+    validations:
+      required: true
+  - type: textarea
+    id: que
+    attributes:
+      label: ¿Qué has hecho y qué ha pasado?
+      placeholder: Base usada, pack usado, etapa donde falla, mensaje de error tal cual sale
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Contenido de ie-repack.log (junto al programa)
+      description: Pégalo entero entre triples comillas; sin esto es muy difícil ayudar
+      render: text
+    validations:
+      required: true

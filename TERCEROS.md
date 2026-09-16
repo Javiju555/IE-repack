@@ -4,7 +4,7 @@
 # Software y datos de terceros
 
 Este proyecto es MIT (ver `LICENSE`), pero integra o referencia piezas de
-terceros. Resumen honesto de cada una:
+terceros. Pieza por pieza:
 
 ## xdelta3 (Apache 2.0) — empaquetado
 
@@ -21,8 +21,7 @@ terceros. Resumen honesto de cada una:
   `gui/crates/ie-core/src/ncch.rs`.
 - Origen: mismos valores que distribuye 3dstool en su fuente abierta
   (dnasdw/3dstool, `src/ncch.cpp`). Son constantes funcionales de 16 bytes
-  sin las cuales el descifrado es imposible; todo tool 3DS las incluye.
-- Sin ellas la app no puede descifrar la base del propio usuario.
+  necesarias para el descifrado de la base del propio usuario.
 
 ## Relleno NCSD de makerom — 256 bytes de salida de herramienta
 
@@ -32,12 +31,10 @@ terceros. Resumen honesto de cada una:
   Salida mecánica de una herramienta, no código ni contenido del juego;
   Azahar exige el campo presente (verificado empíricamente).
 
-## Lo que NO se distribuye aquí (a diferencia de otras herramientas)
+## Lo que no se distribuye aquí
 
-- DeltaPatcher (GPL-2.0): Luis lo empaqueta en su proyecto; nosotros usamos
-  xdelta3 (Apache-2.0) y no lo necesitamos.
-- ctrtool / 3dstool / makerom: no se empaquetan; su comportamiento
-  competente (parseo, AES-CTR, layout NCSD) está reimplementado en
-  `ie-core` a partir de su fuente abierta y de la documentación de 3dbrew.
+- ctrtool / 3dstool / makerom: no se empaquetan. El parseo, el AES-CTR y el
+  layout NCSD están implementados en `ie-core` a partir de fuente abierta
+  y de la documentación de 3dbrew.
 - ROMs, CIAs ni ningún dato del juego: nunca en este repo (ver `.gitignore`
   y el paso `reuse lint` en CI).
