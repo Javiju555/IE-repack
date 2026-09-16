@@ -25,6 +25,7 @@ junto al ejecutable → `PATH`.
 ```bash
 cargo test -p ie-core            # unitarios (rápidos, sin dumps)
 cargo test -p ie-core -- --ignored  # dorados locales (ver ie-core/tests/)
+cargo test -p ie-gui             # GUI, incluye layout a 780 px
 cargo build -p ie-gui --release  # binario en target/release/
 ```
 
