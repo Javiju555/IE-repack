@@ -629,6 +629,18 @@ pub fn run_manifest(
                 return Err(Error::Format("RomFS nuevo no alineado a media (bug interno)".into()));
             }
             nh[0x1B4..0x1B8].copy_from_slice(&((new_blob_len / media) as u32).to_le_bytes());
+            // Content size = nueva partición 0. GodMode9 y el FS de la
+            // consola lo usan para delimitar; si se queda viejo, el final
+            // (justo donde van los ficheros nuevos) queda fuera.
+            // En cambio el L3size del IVFC se deja aposta como estaba: los
+            // apéndices viven en la cola no-hasheada (como el padding
+            // original) y agrandarlo rompería la coherencia L2-cobertura
+            // que hoy pasa (ver NOTA_IE123.md).
+            let new_p0 = p0_len as i64 + delta;
+            if new_p0 % media as i64 != 0 {
+                return Err(Error::Format("partición nueva no alineada a media (bug interno)".into()));
+            }
+            nh[0x104..0x108].copy_from_slice(&((new_p0 / media as i64) as u32).to_le_bytes());
             f.seek(SeekFrom::Start(p0_off))?;
             f.write_all(&nh)?;
             // Slots: p0 crece; los posteriores se desplazan.
