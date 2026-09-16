@@ -93,7 +93,7 @@ fn pipeline_produce_traduccion_de_referencia() {
 
     let cancel = AtomicBool::new(false);
     pipeline::run(
-        &pipeline::Inputs { base_cia: base, patch, out_3ds: out.clone(), keep_work: false },
+        &pipeline::Inputs { base_cia: base, patch, out_3ds: out.clone(), keep_work: false, cia_template: None },
         &cancel,
         &mut |p| eprintln!("{}: {:.1}%", p.stage, p.overall * 100.0),
     )
