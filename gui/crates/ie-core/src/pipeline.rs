@@ -397,7 +397,11 @@ pub fn run_manifest(
                 return Err(Error::Format("el CIA no trae contenidos".into()));
             }
         }
-        let mani = crate::manifest::load(&inp.pack_dir)?;
+        let mani = {
+            // El pack puede ser carpeta o .zip (se extrae a temporales).
+            let dir = crate::manifest::prepare_pack(&inp.pack_dir, &work, cancel)?;
+            crate::manifest::load(&dir)?
+        };
         emit(0, 1, 3);
         let norm_len = std::fs::metadata(&inp.base)?.len();
         if let Ok(space) = fs2::available_space(work.clone()) {

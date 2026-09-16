@@ -1,3 +1,18 @@
+# IE Repack v0.2.0 — parcheador ES (Galaxy + packs por manifiesto)
+
+Tu base japonesa (`.cia`/`.3ds`) + la traducción → `.3ds` en español listo
+para Azahar. Tres modos a elegir en la pantalla de inicio: Galaxy
+Supernova (parche único), Pack de traducción (carpeta o `.zip` con
+`manifiesto.json`, verificado fichero a fichero) y Xdelta estricto
+experimental. Portable, sin instalador: descomprime y ejecuta. Si algo
+falla, adjunta `ie-repack.log` en un issue:
+https://github.com/Javiju555/ie-repack/issues
+
+Probado con Galaxy Supernova ES e IE 1-2-3 ES (arranque en español
+verificado). Este proyecto no incluye ninguna ROM, CIA ni dato del juego.
+
+---
+
 # IE Repack v0.2.0-beta.1 — modo Pack (IE 1-2-3 ES, en pruebas)
 
 **Versión de pruebas, no final.** Nuevo modo "Pack de traducción
