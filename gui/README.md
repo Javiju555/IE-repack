@@ -1,4 +1,4 @@
-# GUI de ie-repack
+# GUI de IE-repack
 
 Ver el `README.md` de la raíz (sección «Aplicación gráfica») para uso y
 decisiones de diseño.

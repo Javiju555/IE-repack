@@ -1,7 +1,11 @@
-# ie-repack
+# IE-repack
 
-Herramienta para reconstruir una versión traducida y jugable de **Inazuma
-Eleven GO Galaxy** a partir de cualquier dump japonés correcto del juego,
+[![Release](https://img.shields.io/github/v/release/Javiju555/ie-repack)](https://github.com/Javiju555/ie-repack/releases)
+[![CI](https://github.com/Javiju555/ie-repack/actions/workflows/ci.yml/badge.svg)](https://github.com/Javiju555/ie-repack/actions)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
+Herramienta para reconstruir versiones traducidas y jugables de **Inazuma
+Eleven (3DS)** a partir de tu propio dump japonés y el parche público,
 sin depender de tener el archivo byte-exacto contra el que se generó el
 parche oficial.
 
@@ -68,15 +72,22 @@ distintas todavía.
 
 1. Baja el `.zip`/`.tar.gz` de tu sistema desde
    [Releases](https://github.com/Javiju555/ie-repack/releases) —
-   Windows, macOS (Apple Silicon) o Linux x86_64.
+   Windows, macOS (Apple Silicon) o Linux x86_64. Portable, sin instalador.
 2. Descomprímelo entero (el ejecutable necesita la carpeta `sidecars/` al
    lado, no lo muevas suelto).
-3. Abre el programa. Elige tu CIA japonés y el parche (`.xdelta` o el `.zip`
-   del blog tal cual), elige dónde guardar, pulsa el botón. Si dejas los dos
-   archivos junto al ejecutable antes de abrirlo, los detecta y precarga solo.
+3. Abre el programa y elige qué quieres hacer en la pantalla de inicio:
+   - **Galaxy Supernova**: tu CIA japonés + el parche (`.xdelta` o el
+     `.zip` del blog tal cual).
+   - **Pack de traducción**: tu base japonesa (`.cia`/`.3ds`) + la carpeta
+     o el `.zip` del pack (con `manifiesto.json`). Cada fichero se
+     verifica dos veces por SHA-256.
+   - **Xdelta estricto** (experimental): base + cadena de parches en orden.
+4. Elige dónde guardar y pulsa el botón. Hacen falta ~10–12 GB libres
+   donde guardes la salida.
 
 Nada de terminal, nada de instalar Rust ni nada más — el binario ya trae todo
-lo que necesita.
+lo que necesita. La app escribe siempre `ie-repack.log` junto al
+ejecutable: si algo falla, adjúntalo al abrir un issue.
 
 <details>
 <summary>Compilar desde fuente (solo si quieres tocar el código)</summary>
@@ -87,25 +98,19 @@ cargo build --release -p ie-gui
 # El binario queda en gui/target/release/ie-repack
 ```
 
-La app arranca en modo Galaxy; el selector ofrece además "Pack de
-traducción (manifiesto)" y un modo genérico "Parche .3ds (estricto,
+La app arranca en una pantalla de inicio con los tres modos explicados
+(sin modo por defecto). El modo genérico "Parche .3ds (estricto,
 experimental)": acepta base `.cia`/`.3ds`, una cadena
 ordenada de parches y SHA final o de contenido opcionales (el de contenido,
 desde el byte 0x200, es el que puede pasar una base convertida desde CIA,
 cuyo wrapper NCSD difiere del cartucho por linaje). Sirve para parches
-distribuidos sobre CCI descifrado canónico (p. ej. traducciones tipo IE 1-2-3);
-está probado con parches sintéticos y con Galaxy como stand-in, pendiente de
-validar con un dump real de esos juegos (ver
-`investigacion/NOTA_IE123.md`).
+distribuidos sobre CCI descifrado canónico.
 
-El modo pack acepta una carpeta con `manifiesto.json` + parches `.xdelta`
-por fichero (formato v57 de la traducción de IE 1-2-3 ES): verifica el SHA
-original de cada fichero de tu base, aplica su parche en estricto, verifica
-el resultado y reconstruye el RomFS (vale aunque cambien los tamaños).
-Todo verificado de punta a punta, incluido arranque en español en Azahar.
-
-La app escribe siempre `ie-repack.log` junto al ejecutable: si algo
-falla, adjúntalo al abrir un issue.
+El modo pack acepta una carpeta o un `.zip` con `manifiesto.json` + parches
+`.xdelta` por fichero: verifica el SHA original de cada fichero de tu
+base, aplica su parche en estricto, verifica el resultado y reconstruye
+el RomFS (vale aunque cambien los tamaños). Verificado de punta a punta
+con IE 1-2-3 ES, incluido arranque en español en Azahar.
 
 </details>
 
@@ -179,15 +184,11 @@ makerom -ciatocci reempaquetado.cia -o reempaquetado.3ds
 
 ## Limitaciones actuales
 
-- El modo `--xdelta-patch` es el recomendado y solo necesita tu CIA japonés +
-  el parche público. Los modos `--translated-cia`/`--fa-dir` siguen ahí como
-  alternativa sin parche (necesitan el contenido traducido completo).
-- Probado específicamente contra Galaxy Supernova. Big Bang debería
-  funcionar igual (mismo layout de CIA), pero no se ha probado.
-- Si algún día se quiere un parche de verdad pequeño, haría falta entender
-  el formato interno de `ie6_a.fa`/`ie6_b.fa` (archivos "fat archive" de
-  Level-5) para diferenciar solo las entradas de texto en vez de mover el
-  archivo completo.
+- La salida es siempre `.3ds` descifrado (lo que come Azahar). Un CIA
+  instalable o un `.3ds` cifrado para flashcart serían la fase 2.
+- Probado a fondo contra Galaxy Supernova e IE 1-2-3 (este último, arranque
+  en español verificado). Big Bang debería funcionar igual (mismo layout
+  de CIA), pero no se ha probado.
 
 ## Licencia
 
