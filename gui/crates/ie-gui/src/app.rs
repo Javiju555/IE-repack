@@ -33,9 +33,17 @@ pub enum Mode {
 impl Mode {
     fn label(self) -> &'static str {
         match self {
-            Mode::Galaxy => "Galaxy Supernova (CIA -> 3ds)",
-            Mode::Pack => "Pack de traducción (manifiesto)",
-            Mode::Generic => "Parche .3ds genérico (estricto, experimental)",
+            Mode::Galaxy => "Galaxy Supernova",
+            Mode::Pack => "Pack (manifiesto)",
+            Mode::Generic => "Xdelta estricto",
+        }
+    }
+
+    fn tip(self) -> &'static str {
+        match self {
+            Mode::Galaxy => "CIA japonés de Galaxy + parche público -> .3ds",
+            Mode::Pack => "Base japonesa + carpeta del pack (manifiesto.json) -> .3ds",
+            Mode::Generic => "Base + cadena de parches .xdelta en orden (experimental)",
         }
     }
 
@@ -870,27 +878,41 @@ impl eframe::App for App {
                 ctx.set_style(style);
             }
             ui.add_space(6.0);
-            ui.heading("IE Repack - parcheador ES");
+            ui.horizontal(|ui| {
+                ui.heading("IE Repack - parcheador ES");
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.weak(egui::RichText::new(format!("v{}", env!("CARGO_PKG_VERSION"))).small());
+                });
+            });
             let subtitle = match self.mode {
                 Mode::Galaxy => "Tu CIA japonés de Galaxy + el parche público -> .3ds en español listo para Azahar.",
                 Mode::Pack => "Tu base japonesa + el pack de traducción -> .3ds en español listo para Azahar.",
                 Mode::Generic => "Tu base + cadena de parches estrictos -> .3ds listo para Azahar.",
             };
             ui.label(subtitle);
-            ui.label(egui::RichText::new("No necesitas instalar nada más: la app trae todo lo necesario.").small());
+            ui.vertical_centered(|ui| {
+                ui.small("No necesitas instalar nada más: la app trae todo lo necesario.");
+            });
             ui.add_space(8.0);
 
-            // Selector de modo.
+            // Selector de modo: botones, no desplegable. La fila lleva su
+            // propio acento (borde azul claro + texto blanco frío).
             ui.horizontal(|ui| {
                 ui.strong("Modo:");
                 let before = self.mode;
-                egui::ComboBox::from_id_salt("mode")
-                    .selected_text(self.mode.label())
-                    .show_ui(ui, |ui| {
-                        ui.selectable_value(&mut self.mode, Mode::Galaxy, Mode::Galaxy.label());
-                        ui.selectable_value(&mut self.mode, Mode::Pack, Mode::Pack.label());
-                        ui.selectable_value(&mut self.mode, Mode::Generic, Mode::Generic.label());
-                    });
+                ui.scope(|ui| {
+                    let vis = &mut ui.style_mut().visuals;
+                    vis.selection.bg_fill = egui::Color32::from_rgb(33, 84, 136);
+                    vis.selection.stroke = egui::Stroke::new(
+                        1.5_f32,
+                        egui::Color32::from_rgb(150, 195, 240),
+                    );
+                    vis.widgets.active.fg_stroke.color = egui::Color32::from_rgb(232, 240, 248);
+                    for m in [Mode::Galaxy, Mode::Pack, Mode::Generic] {
+                        ui.selectable_value(&mut self.mode, m, m.label())
+                            .on_hover_text(m.tip());
+                    }
+                });
                 if before != self.mode {
                     // Cambiar de modo no mezcla estados: resetea progreso/resultado.
                     self.overall = 0.0;
@@ -952,7 +974,17 @@ impl eframe::App for App {
                 ),
             };
             ui.horizontal(|ui| {
-                if ui.add_enabled(ready, egui::Button::new(action).min_size(egui::vec2(220.0, 38.0))).clicked() {
+                let btn = egui::Button::new(action).min_size(egui::vec2(220.0, 38.0));
+                // Cuando está listo, el botón se viste de gala.
+                let btn = if ready {
+                    btn.fill(egui::Color32::from_rgb(27, 94, 32)).stroke(egui::Stroke::new(
+                        1.0_f32,
+                        egui::Color32::from_rgb(102, 187, 106),
+                    ))
+                } else {
+                    btn
+                };
+                if ui.add_enabled(ready, btn).clicked() {
                     self.start();
                 }
                 if self.running && ui.button("Cancelar").clicked() {
@@ -962,7 +994,7 @@ impl eframe::App for App {
             });
             if self.running || self.overall > 0.0 {
                 ui.label(&self.stage_label);
-                ui.add(egui::ProgressBar::new(self.overall).show_percentage());
+                ui.add(egui::ProgressBar::new(self.overall).show_percentage().desired_height(20.0));
                 if !self.stage_detail.is_empty() {
                     ui.monospace(&self.stage_detail);
                 }
@@ -1009,13 +1041,10 @@ impl eframe::App for App {
 
             // Pie: proyecto de hobby + dónde llorar si falla.
             ui.separator();
-            ui.label(egui::RichText::new(
-                "Proyecto de hobby hecho con amor por un fan (Javiju555). Puede fallar: \
-                 si algo sale mal, adjunta el log (ie-repack.log, junto al programa) \
-                 al abrir un issue o avisa en el hilo de la traducción.",
-            )
-            .small()
-            .weak());
+            ui.vertical_centered(|ui| {
+                ui.small("Proyecto de hobby hecho con amor por un fan (Javiju555). Puede fallar: si algo sale mal, adjunta el log");
+                ui.small("(ie-repack.log, junto al programa) al abrir un issue o avisa en el hilo de la traducción.");
+            });
             ui.horizontal(|ui| {
                 if ui.small_button("Abrir carpeta del log").clicked() {
                     let dir = self

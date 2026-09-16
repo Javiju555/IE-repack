@@ -55,7 +55,7 @@ parche no toca).
 
 **Sobre "funciona con cualquier ROM":** no es una garantía absoluta. Lo que
 sí sabemos: el enfoque no depende de que el CIA de entrada coincida byte a
-byte con nada concreto (a diferencia del xdelta), así que debería funcionar
+byte con nada concreto, así que debería funcionar
 con cualquier dump japonés correctamente formado de Galaxy Supernova. Solo
 lo hemos probado contra una fuente en concreto (la más estándar que
 encontramos, la que da cualquier sitio de ROMs al buscar el juego) —
@@ -150,8 +150,8 @@ siguiente sección de por qué.
 
 ## Hallazgo aparte: Azahar rechaza instalar CIAs sin firma real
 
-Esto no tiene que ver con la traducción en sí, pero vale la pena dejarlo
-anotado porque cualquiera reempaquetando contenido de 3DS para Azahar se lo
+Esto no tiene que ver con la traducción en sí, pero queda anotado
+porque cualquiera reempaquetando contenido de 3DS para Azahar se lo
 va a encontrar: en builds recientes de Azahar (probado en 2126.0), **el
 instalador de CIA rechaza cualquier CIA que no tenga una firma válida de
 verdad** — no solo los reempaquetados por esta herramienta, sino también
