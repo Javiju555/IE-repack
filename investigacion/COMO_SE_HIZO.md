@@ -14,8 +14,8 @@ byte a byte contra la copia de referencia (NCCH, IVFC, ExeFS, ambos `.fa`).
 
 ## IE 1-2-3: cirugía de sistema de ficheros
 
-El parche de Luis es mejor diseño: xdelta por fichero + `manifiesto.json`
-con SHAs original/resultado. El camino:
+El pack de traducción usa xdelta por fichero + `manifiesto.json` con SHAs
+original/resultado. El modo Pack lo aplica así:
 
 1. Su base no era otra revisión: código y scripts idénticos a un No-Intro
    limpio (verificado con sus propias herramientas: hooks ARM en su sitio,
