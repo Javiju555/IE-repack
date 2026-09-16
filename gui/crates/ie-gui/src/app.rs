@@ -42,8 +42,16 @@ impl Mode {
     fn tip(self) -> &'static str {
         match self {
             Mode::Galaxy => "CIA japonés de Galaxy + parche público -> .3ds",
-            Mode::Pack => "Base japonesa + carpeta del pack (manifiesto.json) -> .3ds",
+            Mode::Pack => "Base japonesa + pack (carpeta o .zip con manifiesto.json) -> .3ds",
             Mode::Generic => "Base + cadena de parches .xdelta en orden (experimental)",
+        }
+    }
+
+    fn needs(self) -> &'static str {
+        match self {
+            Mode::Galaxy => "Necesitas: tu CIA japonés de Galaxy Supernova + el parche (.xdelta o .zip).",
+            Mode::Pack => "Necesitas: base japonesa (.cia/.3ds) + pack (carpeta o .zip con manifiesto.json).",
+            Mode::Generic => "Necesitas: base (.cia/.3ds) + parches .xdelta en orden. Experimental.",
         }
     }
 
@@ -70,6 +78,8 @@ impl Mode {
 
 pub struct App {
     mode: Mode,
+    /// Pantalla de inicio con las tarjetas de modo. Al elegir se entra.
+    show_home: bool,
     base: Option<PathBuf>,
     base_info: String,
     base_ok: bool,
@@ -143,6 +153,7 @@ impl Default for App {
     fn default() -> Self {
         let mut app = Self {
             mode: Mode::Galaxy,
+            show_home: true,
             base: None,
             base_info: "Sin seleccionar".into(),
             base_ok: false,
@@ -173,7 +184,7 @@ impl Default for App {
             rx: None,
             last_logged_stage: None,
         };
-        app.push_log("Elige tu CIA japonés y el parche (.xdelta o .zip del blog).");
+        app.push_log("Elige un modo para empezar.");
         // Precarga: lo que esté junto al ejecutable.
         if let Some(dir) = std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.to_path_buf())) {
             let cias = siblings_with_ext(&dir, &["cia"]);
@@ -294,19 +305,19 @@ impl App {
         }
     }
 
-    fn set_m_pack(&mut self, dir: PathBuf) {
-        self.m_pack = Some(dir.clone());
+    fn set_m_pack(&mut self, path: PathBuf) {
+        self.m_pack = Some(path.clone());
         self.result = None;
-        match ie_core::manifest::describe(&dir) {
+        match ie_core::manifest::describe_pack(&path) {
             Ok(info) => {
                 self.m_pack_info = info.clone();
                 self.m_pack_ok = true;
-                self.push_log(format!("Pack: {} ({info})", dir.display()));
+                self.push_log(format!("Pack: {} ({info})", path.display()));
             }
             Err(e) => {
                 self.m_pack_info = format!("No válido: {e}");
                 self.m_pack_ok = false;
-                self.push_log(format!("Pack rechazado ({}): {e}", dir.display()));
+                self.push_log(format!("Pack rechazado ({}): {e}", path.display()));
             }
         }
     }
@@ -316,7 +327,7 @@ impl App {
             return "falta una base válida".into();
         }
         if !self.m_pack_ok {
-            return "falta un pack válido (carpeta con manifiesto.json)".into();
+            return "falta un pack válido (carpeta o .zip con manifiesto.json)".into();
         }
         if self.out.trim().is_empty() {
             return "falta la salida".into();
@@ -663,6 +674,55 @@ fn friendly_error(e: &ie_core::error::Error) -> String {
 }
 
 impl App {
+    /// Pantalla de inicio: una tarjeta por modo, cada una dice qué hace y
+    /// qué necesita. Sin modo por defecto: nadie debe pensar que la app es
+    /// de un solo juego.
+    fn ui_home(&mut self, ui: &mut egui::Ui) {
+        ui.add_space(4.0);
+        ui.label("Elige qué quieres hacer:");
+        ui.add_space(4.0);
+        let mut pick: Option<Mode> = None;
+        for m in [Mode::Galaxy, Mode::Pack, Mode::Generic] {
+            let frame = egui::Frame::group(ui.style()).inner_margin(12.0).show(ui, |ui| {
+                // Ancho completo: el marco mide lo que mide su contenido.
+                ui.set_width(ui.available_width());
+                ui.vertical(|ui| {
+                    ui.strong(m.label());
+                    ui.label(m.tip());
+                    ui.weak(m.needs());
+                });
+            });
+            // Toda la tarjeta es clicable, con borde iluminado al hover.
+            let hit = ui.interact(
+                frame.response.rect,
+                egui::Id::new(("modo", m as u8)),
+                egui::Sense::click(),
+            );
+            if hit.hovered() {
+                ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::PointingHand);
+                ui.painter().rect_stroke(
+                    hit.rect,
+                    egui::CornerRadius::same(6),
+                    egui::Stroke::new(1.5_f32, egui::Color32::from_rgb(150, 195, 240)),
+                    egui::StrokeKind::Outside,
+                );
+            }
+            if hit.clicked() {
+                pick = Some(m);
+            }
+            ui.add_space(4.0);
+        }
+        if let Some(m) = pick {
+            self.mode = m;
+            self.show_home = false;
+            self.result = None;
+            self.overall = 0.0;
+            self.stage_label.clear();
+            self.stage_detail.clear();
+            self.push_log(format!("Modo: {}", m.label()));
+        }
+    }
+
     /// Panel del modo Galaxy (dos tarjetas en horizontal).
     fn ui_galaxy(&mut self, ui: &mut egui::Ui) {
         let b_short = self.base.as_ref().map(short_name);
@@ -718,7 +778,8 @@ impl App {
         let (p_info, p_ok) = (self.m_pack_info.clone(), self.m_pack_ok);
         let running = self.running;
         let mut pick_base = false;
-        let mut pick_pack = false;
+        let mut pick_pack_dir = false;
+        let mut pick_pack_zip = false;
         ui.columns(2, |cols| {
             pick_base = file_card(
                 &mut cols[0],
@@ -730,16 +791,32 @@ impl App {
                 "Elegir base...",
                 running,
             );
-            pick_pack = file_card(
-                &mut cols[1],
-                "2. Pack de traducción",
-                p_short.as_deref(),
-                p_full.as_deref(),
-                &p_info,
-                p_ok,
-                "Elegir carpeta...",
-                running,
-            );
+            egui::Frame::group(cols[1].style()).inner_margin(12.0).show(&mut cols[1], |ui| {
+                ui.strong("2. Pack de traducción");
+                ui.add_space(4.0);
+                match p_short.as_deref() {
+                    Some(name) => {
+                        let label = ui.monospace(name);
+                        if let Some(f) = p_full.as_deref() {
+                            label.on_hover_text(f);
+                        }
+                    }
+                    None => {
+                        ui.weak("(sin elegir)");
+                    }
+                }
+                let color = if p_ok { egui::Color32::GREEN } else { ui.style().visuals.text_color() };
+                ui.colored_label(color, &p_info);
+                ui.add_space(6.0);
+                ui.horizontal(|ui| {
+                    if ui.add_enabled(!running, egui::Button::new("Carpeta...")).clicked() {
+                        pick_pack_dir = true;
+                    }
+                    if ui.add_enabled(!running, egui::Button::new(".zip...")).clicked() {
+                        pick_pack_zip = true;
+                    }
+                });
+            });
         });
         if pick_base {
             if let Some(p) = rfd::FileDialog::new()
@@ -749,8 +826,13 @@ impl App {
                 self.set_m_base(p);
             }
         }
-        if pick_pack {
+        if pick_pack_dir {
             if let Some(p) = rfd::FileDialog::new().pick_folder() {
+                self.set_m_pack(p);
+            }
+        }
+        if pick_pack_zip {
+            if let Some(p) = rfd::FileDialog::new().add_filter("Pack", &["zip"]).pick_file() {
                 self.set_m_pack(p);
             }
         }
@@ -895,31 +977,23 @@ impl eframe::App for App {
             });
             ui.add_space(8.0);
 
-            // Selector de modo: botones, no desplegable. La fila lleva su
-            // propio acento (borde azul claro + texto blanco frío).
+            // Inicio o modo: sin modo por defecto para que nadie piense
+            // que la app es de un solo juego.
+            if self.show_home {
+                self.ui_home(ui);
+                ui.add_space(8.0);
+                self.ui_footer(ui);
+                return;
+            }
+
+            // Fila de navegación dentro de un modo.
             ui.horizontal(|ui| {
-                ui.strong("Modo:");
-                let before = self.mode;
-                ui.scope(|ui| {
-                    let vis = &mut ui.style_mut().visuals;
-                    vis.selection.bg_fill = egui::Color32::from_rgb(33, 84, 136);
-                    vis.selection.stroke = egui::Stroke::new(
-                        1.5_f32,
-                        egui::Color32::from_rgb(150, 195, 240),
-                    );
-                    vis.widgets.active.fg_stroke.color = egui::Color32::from_rgb(232, 240, 248);
-                    for m in [Mode::Galaxy, Mode::Pack, Mode::Generic] {
-                        ui.selectable_value(&mut self.mode, m, m.label())
-                            .on_hover_text(m.tip());
-                    }
-                });
-                if before != self.mode {
-                    // Cambiar de modo no mezcla estados: resetea progreso/resultado.
-                    self.overall = 0.0;
+                if ui.small_button("‹ Cambiar de modo").clicked() {
+                    self.show_home = true;
                     self.result = None;
-                    self.stage_label.clear();
-                    self.stage_detail.clear();
                 }
+                ui.strong(self.mode.label());
+                ui.weak(format!("· {}", self.mode.tip()));
             });
             ui.add_space(4.0);
 
@@ -1040,29 +1114,36 @@ impl eframe::App for App {
             ui.add_space(4.0);
 
             // Pie: proyecto de hobby + dónde llorar si falla.
-            ui.separator();
-            ui.vertical_centered(|ui| {
-                ui.small("Proyecto de hobby hecho con amor por un fan (Javiju555). Puede fallar: si algo sale mal, adjunta el log");
-                ui.small("(ie-repack.log, junto al programa) al abrir un issue o avisa en el hilo de la traducción.");
-            });
-            ui.horizontal(|ui| {
-                if ui.small_button("Abrir carpeta del log").clicked() {
-                    let dir = self
-                        .log_path
-                        .parent()
-                        .filter(|d| !d.as_os_str().is_empty())
-                        .map(|d| d.to_path_buf())
-                        .unwrap_or_else(|| PathBuf::from("."));
-                    if open::that_detached(&dir).is_err() {
-                        self.push_log(format!("No se pudo abrir la carpeta: {}", dir.display()));
-                    }
+            self.ui_footer(ui);
+        });
+    }
+}
+
+impl App {
+    /// Pie compartido (inicio y modos): quién, y dónde llorar si falla.
+    fn ui_footer(&mut self, ui: &mut egui::Ui) {
+        ui.separator();
+        ui.vertical_centered(|ui| {
+            ui.small("Proyecto de hobby hecho con amor por un fan (Javiju555). Puede fallar: si algo sale mal, adjunta el log");
+            ui.small("(ie-repack.log, junto al programa) al abrir un issue o avisa en el hilo de la traducción.");
+        });
+        ui.horizontal(|ui| {
+            if ui.small_button("Abrir carpeta del log").clicked() {
+                let dir = self
+                    .log_path
+                    .parent()
+                    .filter(|d| !d.as_os_str().is_empty())
+                    .map(|d| d.to_path_buf())
+                    .unwrap_or_else(|| PathBuf::from("."));
+                if open::that_detached(&dir).is_err() {
+                    self.push_log(format!("No se pudo abrir la carpeta: {}", dir.display()));
                 }
-                if ui.small_button("Abrir issues en GitHub").clicked() {
-                    if open::that_detached("https://github.com/Javiju555/ie-repack/issues").is_err() {
-                        self.push_log("No se pudo abrir el navegador.");
-                    }
+            }
+            if ui.small_button("Abrir issues en GitHub").clicked() {
+                if open::that_detached("https://github.com/Javiju555/ie-repack/issues").is_err() {
+                    self.push_log("No se pudo abrir el navegador.");
                 }
-            });
+            }
         });
     }
 }
@@ -1169,6 +1250,7 @@ mod tests {
 
         // Estado Galaxy completado, rutas largas.
         let mut g = App::default();
+        g.show_home = false;
         g.base = Some(PathBuf::from("/home/javiju/Juegos/IE-Galaxy-ES/Inazuma Eleven Go Galaxy - Supernova (Japan).cia"));
         g.base_info = "CTR-P-BGSJ [Supernova]".into();
         g.base_ok = true;
@@ -1186,6 +1268,7 @@ mod tests {
 
         // Estado genérico con cadena de 2 parches y SHA.
         let mut x = App::default();
+        x.show_home = false;
         x.mode = Mode::Generic;
         x.g_base = Some(PathBuf::from("/home/javiju/Juegos/IE123/Inazuma Eleven 1-2-3 - Endou Mamoru Densetsu.3ds"));
         x.g_base_info = "3ds CTR-P-AETJ, TitleId 00040000000EDF00 [descifrado]".into();
@@ -1203,6 +1286,7 @@ mod tests {
 
         // Estado pack con base larga y pack largo.
         let mut m = App::default();
+        m.show_home = false;
         m.mode = Mode::Pack;
         m.m_base = Some(PathBuf::from("/home/javiju/Juegos/IE123/Inazuma Eleven 1-2-3 - Endou Mamoru Densetsu.3ds"));
         m.m_base_info = "3ds CTR-P-AETJ, TitleId 00040000000EDF00 [descifrado]".into();
@@ -1215,5 +1299,8 @@ mod tests {
         m.stage_label = "Etapa 4/7: Aplicando parches".into();
         m.stage_detail = "800 / 1700 MB".into();
         check(m, "pack");
+
+        // Estado inicial: la pantalla de inicio con las 3 tarjetas.
+        check(App::default(), "inicio");
     }
 }
