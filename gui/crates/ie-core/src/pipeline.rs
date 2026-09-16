@@ -538,10 +538,13 @@ pub fn run_manifest(
 
         // 4. Reconstruye el blob RomFS (apéndice) en temporal.
         let new_blob = work.join("romfs_new.bin");
-        let layout = crate::romfs::rebuild_append_only(
+        let full = crate::romfs::rebuild_full(
             &norm.path, romfs_abs, romfs_len, file_data_base, &repl, &new_blob, cancel,
             &mut |d, t| emit(4, d, t),
         )?;
+        let layout = full.locs;
+        let new_hash_romfs = full.hash_romfs;
+        let new_roh_units = full.romfs_hash_units;
         let want_locs: usize = repl.iter().map(|r| r.locs.len()).sum();
         if layout.len() != want_locs {
             return Err(Error::Format("layout reconstruido incompleto (bug interno)".into()));
@@ -629,13 +632,15 @@ pub fn run_manifest(
                 return Err(Error::Format("RomFS nuevo no alineado a media (bug interno)".into()));
             }
             nh[0x1B4..0x1B8].copy_from_slice(&((new_blob_len / media) as u32).to_le_bytes());
+            // Hash base del RomFS (superblock+master nuevos) y su cobertura.
+            nh[0x1B8..0x1BC].copy_from_slice(&new_roh_units.to_le_bytes());
+            nh[0x1E0..0x200].copy_from_slice(&new_hash_romfs);
             // Content size = nueva partición 0. GodMode9 y el FS de la
             // consola lo usan para delimitar; si se queda viejo, el final
             // (justo donde van los ficheros nuevos) queda fuera.
-            // En cambio el L3size del IVFC se deja aposta como estaba: los
-            // apéndices viven en la cola no-hasheada (como el padding
-            // original) y agrandarlo rompería la coherencia L2-cobertura
-            // que hoy pasa (ver NOTA_IE123.md).
+            // El rebuild es COMPLETO con rehash IVFC (romfs.rs): tamaños y
+            // cadena lvl2->lvl1->master coherentes, lo que verifica a fondo
+            // GodMode9 (ver NOTA_IE123.md).
             let new_p0 = p0_len as i64 + delta;
             if new_p0 % media as i64 != 0 {
                 return Err(Error::Format("partición nueva no alineada a media (bug interno)".into()));

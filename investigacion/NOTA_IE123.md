@@ -274,3 +274,19 @@ dorado (hashes de `ie6_a.fa`/`ie6_b.fa`).
 - 2026-09-16: prueba en GUI con el CIA (beta.1): OK
   (Etapa 7/7, salida 3,46 GB que ARRANCA en español). Validación CIA
   completa de verdad, no solo humo.
+
+## v0.3.2: rebuild COMPLETO con rehash IVFC (2026-09-16 noche)
+
+- Fotos de Luis: falla el verify a fondo del Contenido0; el banner carga
+  (ExeFS intacto). Espejo fiel de `VerifyNcchFile` en `/tmp/mirror_verify.py`:
+  pristina OK 463224 bloques; nuestra v0.3.1 FAIL en lvl3 bloque 1
+  (los parches in-place de FileMeta invalidan hashes; el bloque 0 pasa).
+- Fix: `rebuild_full` (romfs.rs) reempaqueta el nivel de datos (1660
+  entradas, pad a 4, orden original) y recalcula lvl2->lvl1->master con
+  tamanos coherentes + hash base NCCH. Detalles: nlen en BYTES, entradas
+  alineadas a 4, ultimo bloque parcial se hashea con el relleno a ceros
+  (igual que lee GM9), `size_romfs_hash` recalculado.
+- Verificado: synth con IVFC real minimo + cadena re-verificada en el
+  test; e2e v55 con CCI y con la CIA de Luis (mismo RomFS, otro ExeFS):
+  espejo OK 511501 bloques + boot Azahar en ambos.
+- CIA de Luis vs CCI Vimm: RomFS identico, ExeFS distinto (otra version).
