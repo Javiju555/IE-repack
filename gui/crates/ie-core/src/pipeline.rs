@@ -34,6 +34,11 @@ pub struct Inputs {
     pub patch: PathBuf,
     pub out_3ds: PathBuf,
     pub keep_work: bool,
+    /// Plantilla CIA (cabecera + offsets) para cuando la base es un volcado
+    /// de tarjeta (CCI/`.3ds`): el xdelta espera bytes con envoltorio CIA y
+    /// se reconstruyen desde el CCI normalizado. Vale cualquier CIA
+    /// original del mismo juego y revisión (solo se copia su layout).
+    pub cia_template: Option<PathBuf>,
 }
 
 const STAGES: [(&str, f32); 7] = [
@@ -174,13 +179,47 @@ pub fn run(inp: &Inputs, cancel: &AtomicBool, prog: &mut dyn FnMut(StageProgress
     };
 
     let result = (|| -> Result<()> {
-        // 0. parse-base.
+        // 0. parse-base: CIA directo, o CCI/.3ds + plantilla -> sintetiza CIA.
         emit(0, 0, 1);
         check_cancel(cancel)?;
-        let layout = crate::cia::read_layout(&inp.base_cia)?;
+        let _norm_guard: Option<crate::normalize::NormalizedCci>;
+        let src_cia: PathBuf;
+        if crate::cia::read_layout(&inp.base_cia).is_ok() {
+            src_cia = inp.base_cia.clone();
+            _norm_guard = None;
+        } else {
+            let norm = crate::normalize::normalize_to_decrypted_cci(
+                &inp.base_cia, &work, cancel, &mut |_, _| {},
+            )?;
+            let template = inp.cia_template.as_ref().ok_or_else(|| {
+                Error::Format(
+                    "la base es un volcado de tarjeta (CCI/.3ds) y el parche espera un CIA: indica un CIA original del mismo juego como plantilla (solo se usa su layout)".into(),
+                )
+            })?;
+            let slots = crate::cci::partitions_indexed(&norm.path)?;
+            // Empareja por tamaño (el CCI trae particiones que el CIA no
+            // lleva, como la de update): cada content de la plantilla coge
+            // la partición que mida igual.
+            let tlay = crate::cia::read_layout(template)?;
+            let mut parts: Vec<crate::cia::SynthPart> = Vec::new();
+            for c in tlay.contents.iter() {
+                let hit = slots.iter().find(|(_, _, len)| *len == c.size).ok_or_else(|| {
+                    Error::Format(format!(
+                        "content{}: la plantilla espera {} bytes y ninguna partición de la base mide eso (¿otra revisión?)",
+                        c.index, c.size
+                    ))
+                })?;
+                parts.push(crate::cia::SynthPart { src: norm.path.clone(), src_off: hit.1, len: hit.2 });
+            }
+            let synth = work.join("synth.cia");
+            crate::cia::synthesize_like(template, &parts, &synth, cancel, &mut |_, _| {})?;
+            src_cia = synth;
+            _norm_guard = Some(norm);
+        }
+        let layout = crate::cia::read_layout(&src_cia)?;
         let c0 = layout.content(0)?.clone();
         let _c1 = layout.content(1)?.clone();
-        let base_hdr = read_ncch_header(&inp.base_cia, c0.offset)?;
+        let base_hdr = read_ncch_header(&src_cia, c0.offset)?;
         emit(0, 1, 1);
 
         // Espacio libre orientativo. Pico real de temporal en disco: spliced
@@ -200,7 +239,7 @@ pub fn run(inp: &Inputs, cancel: &AtomicBool, prog: &mut dyn FnMut(StageProgress
         let spliced = work.join("spliced.cia");
         let total = layout.total_size;
         let mut done_c = 0u64;
-        copy_stream(&inp.base_cia, &spliced, cancel, &mut |d| {
+        copy_stream(&src_cia, &spliced, cancel, &mut |d| {
             done_c += d;
             emit(1, done_c / 2, total);
         })?;
