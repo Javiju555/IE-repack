@@ -41,7 +41,7 @@ impl Mode {
 
     fn tip(self) -> &'static str {
         match self {
-            Mode::Galaxy => "CIA japonés de Galaxy + parche público -> .3ds",
+            Mode::Galaxy => "Base japonesa + parche público -> .3ds",
             Mode::Pack => "Base japonesa + pack (carpeta o .zip con manifiesto.json) -> .3ds",
             Mode::Generic => "Base + cadena de parches .xdelta en orden (experimental)",
         }
@@ -49,7 +49,7 @@ impl Mode {
 
     fn needs(self) -> &'static str {
         match self {
-            Mode::Galaxy => "Necesitas: tu CIA japonés de Galaxy Supernova + el parche (.xdelta o .zip).",
+            Mode::Galaxy => "Necesitas: tu base japonesa de Galaxy (.cia o .3ds/.cci) + el parche (.xdelta o .zip). Si la base es .3ds/.cci, además un CIA original del juego como plantilla (solo se usa su layout).",
             Mode::Pack => "Necesitas: base japonesa (.cia/.3ds) + pack (carpeta o .zip con manifiesto.json).",
             Mode::Generic => "Necesitas: base (.cia/.3ds) + parches .xdelta en orden. Experimental.",
         }
@@ -58,9 +58,10 @@ impl Mode {
     fn guide(self) -> &'static [&'static str] {
         match self {
             Mode::Galaxy => &[
-                "1. Elige tu CIA japonés de Galaxy Supernova.",
+                "1. Elige tu base japonesa de Galaxy (.cia, o .3ds/.cci).",
                 "2. Elige el parche (.xdelta o el .zip del blog).",
-                "3. Pulsa el botón y espera: sale un .3ds en español.",
+                "3. Si la base es .3ds/.cci: elige un CIA original como plantilla.",
+                "4. Pulsa el botón y espera: sale un .3ds en español.",
             ],
             Mode::Pack => &[
                 "1. Elige tu base japonesa (.3ds descifrado; vale el .cia).",
@@ -86,6 +87,10 @@ pub struct App {
     patch: Option<PathBuf>,
     patch_info: String,
     patch_ok: bool,
+    /// Plantilla CIA para bases CCI/.3ds en modo Galaxy (solo su layout).
+    template: Option<PathBuf>,
+    template_info: String,
+    template_ok: bool,
     out: String,
     // Estado del modo genérico.
     g_base: Option<PathBuf>,
@@ -160,6 +165,9 @@ impl Default for App {
             patch: None,
             patch_info: "Sin seleccionar".into(),
             patch_ok: false,
+            template: None,
+            template_info: "Sin seleccionar".into(),
+            template_ok: false,
             out: String::new(),
             g_base: None,
             g_base_info: "Sin seleccionar".into(),
@@ -216,7 +224,7 @@ impl App {
     fn set_base(&mut self, path: PathBuf) {
         self.base = Some(path.clone());
         self.result = None;
-        match describe_cia(&path) {
+        match describe_any(&path) {
             Ok(info) => {
                 self.base_info = info.clone();
                 self.base_ok = true;
@@ -231,6 +239,34 @@ impl App {
                 self.push_log(format!("Base rechazada ({}): {e}", path.display()));
             }
         }
+    }
+
+    /// Plantilla CIA para el modo Galaxy con base CCI/.3ds: debe ser un CIA
+    /// legible (solo se usa su layout; el contenido lo pone la base).
+    fn set_template(&mut self, path: PathBuf) {
+        self.template = Some(path.clone());
+        self.result = None;
+        match describe_cia(&path) {
+            Ok(info) => {
+                self.template_info = info.clone();
+                self.template_ok = true;
+                self.push_log(format!("Plantilla: {} ({info})", path.display()));
+            }
+            Err(e) => {
+                self.template_info = format!("No válido: {e}");
+                self.template_ok = false;
+                self.push_log(format!("Plantilla rechazada ({}): {e}", path.display()));
+            }
+        }
+    }
+
+    /// La base exige plantilla cuando es un volcado de tarjeta.
+    fn base_needs_template(&self) -> bool {
+        self.base
+            .as_ref()
+            .and_then(|p| p.extension().and_then(|e| e.to_str()))
+            .map(|e| e.eq_ignore_ascii_case("cci") || e.eq_ignore_ascii_case("3ds"))
+            .unwrap_or(false)
     }
 
     fn set_patch(&mut self, path: PathBuf) {
@@ -427,8 +463,9 @@ impl App {
         self.rx = Some(rx);
         let cancel = self.cancel.clone();
         self.push_log(format!("Procesando {} ...", base.display()));
+        let template = self.template.clone();
         std::thread::spawn(move || {
-            let inputs = pipeline::Inputs { base_cia: base, patch, out_3ds: out, keep_work: false };
+            let inputs = pipeline::Inputs { base_cia: base, patch, out_3ds: out, keep_work: false, cia_template: template };
             let r = pipeline::run(
                 &inputs,
                 &cancel,
@@ -723,7 +760,8 @@ impl App {
         }
     }
 
-    /// Panel del modo Galaxy (dos tarjetas en horizontal).
+    /// Panel del modo Galaxy (dos tarjetas en horizontal + plantilla si la
+    /// base es un volcado de tarjeta).
     fn ui_galaxy(&mut self, ui: &mut egui::Ui) {
         let b_short = self.base.as_ref().map(short_name);
         let b_full = self.base.as_ref().map(|p| p.display().to_string());
@@ -737,12 +775,12 @@ impl App {
         ui.columns(2, |cols| {
             pick_base = file_card(
                 &mut cols[0],
-                "1. CIA japonés",
+                "1. Base japonesa",
                 b_short.as_deref(),
                 b_full.as_deref(),
                 &b_info,
                 b_ok,
-                "Elegir .cia...",
+                "Elegir .cia/.3ds...",
                 running,
             );
             pick_patch = file_card(
@@ -757,13 +795,35 @@ impl App {
             );
         });
         if pick_base {
-            if let Some(p) = rfd::FileDialog::new().add_filter("CIA de 3DS", &["cia"]).pick_file() {
+            if let Some(p) = rfd::FileDialog::new().add_filter("Base 3DS", &["cia", "3ds", "cci"]).pick_file() {
                 self.set_base(p);
             }
         }
         if pick_patch {
             if let Some(p) = rfd::FileDialog::new().add_filter("Parche", &["xdelta", "zip"]).pick_file() {
                 self.set_patch(p);
+            }
+        }
+        // Solo con base CCI/.3ds: el parche espera envoltorio CIA y hay que
+        // darle una plantilla (cualquier CIA original del mismo juego).
+        if self.base_needs_template() {
+            ui.add_space(4.0);
+            let t_short = self.template.as_ref().map(short_name);
+            let t_full = self.template.as_ref().map(|p| p.display().to_string());
+            let (t_info, t_ok) = (self.template_info.clone(), self.template_ok);
+            if file_card(
+                ui,
+                "3. Plantilla CIA (la base es .3ds/.cci y el parche espera un CIA)",
+                t_short.as_deref(),
+                t_full.as_deref(),
+                &t_info,
+                t_ok,
+                "Elegir .cia plantilla...",
+                running,
+            ) {
+                if let Some(p) = rfd::FileDialog::new().add_filter("CIA de 3DS", &["cia"]).pick_file() {
+                    self.set_template(p);
+                }
             }
         }
     }
@@ -1035,7 +1095,8 @@ impl eframe::App for App {
             // Acción + progreso.
             let (ready, action) = match self.mode {
                 Mode::Galaxy => (
-                    self.base_ok && self.patch_ok && !self.out.trim().is_empty() && !self.running,
+                    self.base_ok && self.patch_ok && !self.out.trim().is_empty() && !self.running
+                        && (!self.base_needs_template() || self.template_ok),
                     "Crear .3ds en español",
                 ),
                 Mode::Pack => (

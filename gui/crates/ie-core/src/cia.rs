@@ -7,11 +7,18 @@
 //! Estrategia idéntica a `rebuild.sh`: los tamaños salen del TMD y los
 //! offsets se calculan desde el final (el contenido queda justo antes del
 //! footer), sin adivinar paddings de cabecera.
+//!
+//! Además: `synthesize_like` reconstruye un CIA con el layout (cabecera +
+//! offsets) de una plantilla pero contenidos traídos de otro sitio (p. ej.
+//! particiones de un CCI normalizado y descifrado). Es la pieza que hace
+//! universal el modo forzado: el xdelta espera bytes con envoltorio CIA y
+//! se le dan, aunque la base del usuario sea un volcado de tarjeta.
 
 use crate::error::{Error, Result};
 use std::fs::File;
-use std::io::{Read, Seek, SeekFrom};
-use std::path::Path;
+use std::io::{Read, Seek, SeekFrom, Write};
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 #[derive(Debug, Clone)]
 pub struct ContentRef {
@@ -209,4 +216,124 @@ mod tests {
         assert!(read_layout(&p).is_err());
         std::fs::remove_file(&p).ok();
     }
+}
+
+/// Un contenido de origen para `synthesize_like`: de dónde copiarlo.
+#[derive(Debug, Clone)]
+pub struct SynthPart {
+    pub src: PathBuf,
+    pub src_off: u64,
+    pub len: u64,
+}
+
+/// Sintetiza en `out` un CIA con el layout exacto de `template` (cabecera,
+/// TMD y offsets, copiados tal cual) pero con los contenidos de `parts` (en
+/// orden de índice). Los tamaños deben coincidir al byte: si la plantilla
+/// es de otro juego o revisión, se rechaza en vez de fabricar un híbrido.
+///
+/// El TMD copiado queda rancio (hashes de los contenidos originales), pero
+/// no importa: el flujo forzado solo extrae los contenidos del resultado.
+/// Sirve para alimentar un xdelta generado contra bytes-CIA partiendo de
+/// un CCI normalizado y descifrado (mismo juego, otra envoltura).
+pub fn synthesize_like(
+    template: &Path,
+    parts: &[SynthPart],
+    out: &Path,
+    cancel: &AtomicBool,
+    mut progress: impl FnMut(u64, u64),
+) -> Result<CiaLayout> {
+    let layout = read_layout(template)?;
+    if parts.len() != layout.contents.len() {
+        return Err(Error::Format(format!(
+            "la plantilla trae {} contents y se dieron {} (¿plantilla de otro juego?)",
+            layout.contents.len(),
+            parts.len()
+        )));
+    }
+    for (p, c) in parts.iter().zip(layout.contents.iter()) {
+        if p.len != c.size {
+            return Err(Error::Format(format!(
+                "content{}: la plantilla espera {} bytes y la base trae {} (¿otra revisión?)",
+                c.index, c.size, p.len
+            )));
+        }
+    }
+    let total = layout.total_size;
+    let first_off = layout.contents.first().map(|c| c.offset).unwrap_or(total);
+    let mut o = File::create(out)?;
+    let mut done = 0u64;
+    // Cabecera + metadatos de la plantilla (hasta el primer content).
+    {
+        let mut t = File::open(template)?;
+        t.seek(SeekFrom::Start(0))?;
+        let mut left = first_off;
+        let mut buf = vec![0u8; 8 * 1024 * 1024];
+        while left > 0 {
+            if cancel.load(Ordering::Relaxed) {
+                return Err(Error::Cancelled);
+            }
+            let n = left.min(buf.len() as u64) as usize;
+            t.read_exact(&mut buf[..n])?;
+            o.write_all(&buf[..n])?;
+            left -= n as u64;
+            done += n as u64;
+            progress(done, total);
+        }
+    }
+    // Contenidos en orden (los offsets de plantilla son contiguos; si hay
+    // hueco se rellena con ceros para no desplazar nada).
+    let mut buf = vec![0u8; 8 * 1024 * 1024];
+    for (p, c) in parts.iter().zip(layout.contents.iter()) {
+        if done < c.offset {
+            let z = vec![0u8; (c.offset - done).min(8 * 1024 * 1024) as usize];
+            let mut left = c.offset - done;
+            while left > 0 {
+                if cancel.load(Ordering::Relaxed) {
+                    return Err(Error::Cancelled);
+                }
+                let n = left.min(z.len() as u64) as usize;
+                o.write_all(&z[..n])?;
+                left -= n as u64;
+                done += n as u64;
+            }
+        }
+        if done != c.offset {
+            return Err(Error::Format("hueco negativo en la plantilla (bug interno)".into()));
+        }
+        let mut s = File::open(&p.src)?;
+        s.seek(SeekFrom::Start(p.src_off))?;
+        let mut left = p.len;
+        while left > 0 {
+            if cancel.load(Ordering::Relaxed) {
+                return Err(Error::Cancelled);
+            }
+            let n = left.min(buf.len() as u64) as usize;
+            s.read_exact(&mut buf[..n])?;
+            o.write_all(&buf[..n])?;
+            left -= n as u64;
+            done += n as u64;
+            progress(done, total);
+        }
+    }
+    // Footer de la plantilla (tras el último content).
+    {
+        let mut t = File::open(template)?;
+        let end = layout.contents.last().map(|c| c.offset + c.size).unwrap_or(first_off);
+        t.seek(SeekFrom::Start(end))?;
+        let mut left = total - end;
+        while left > 0 {
+            if cancel.load(Ordering::Relaxed) {
+                return Err(Error::Cancelled);
+            }
+            let n = left.min(buf.len() as u64) as usize;
+            t.read_exact(&mut buf[..n])?;
+            o.write_all(&buf[..n])?;
+            left -= n as u64;
+            done += n as u64;
+            progress(done, total);
+        }
+    }
+    o.flush()?;
+    progress(total, total);
+    Ok(layout)
 }

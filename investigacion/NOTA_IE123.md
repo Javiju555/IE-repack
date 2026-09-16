@@ -290,3 +290,39 @@ dorado (hashes de `ie6_a.fa`/`ie6_b.fa`).
   test; e2e v55 con CCI y con la CIA de Luis (mismo RomFS, otro ExeFS):
   espejo OK 511501 bloques + boot Azahar en ambos.
 - CIA de Luis vs CCI Vimm: RomFS identico, ExeFS distinto (otra version).
+
+## CIA original del equipo Galaxy (2026-09-16)
+
+- `Descargas/IEGOGalaxySupernovaDesencriptado.cia` vs nuestro CIA: mismo
+  tamaño (2949727232), TitleId y producto iguales, p0 (el juego) BYTE
+  IDENTICO tras normalizar (mismos hashes ExeFS/RomFS/ExtHeader).
+- Diferencias: (1) el suyo va DESCIFRADO (enc=false), el nuestro CIFRADO
+  (enc=true): el xdelta del equipo se genero contra bytes descifrados,
+  de ahi el fallo historico al aplicarlo sobre nuestra base (hoy el
+  splice-decrypt lo salva). (2) Solo difieren bytes del manual (p1),
+  irrelevantes para el parche. Misma revision del juego, sin duda.
+
+## Vimm Galaxy .cci vs CIA del equipo (2026-09-16)
+
+- El .cci de Vimm (4 GB, tarjeta completa) normaliza a enc=false,
+  TitleId/producto iguales. p0: ExeFS y RomFS IDENTICOS al CIA del
+  equipo; ExtHeader DIFIERE (c97de6.. vs 5fa65a..: metadatos/version,
+  no codigo ni datos). p7 de update presente en el cart (los CIA lo
+  tiran). Conclusion: mismo juego, distinta envoltura + ExtHeader
+  tocado por la conversion a CIA. El xdelta del equipo (contra bytes
+  de CIA descifrado) no podia aplicar ni sobre este: contenedor NCSD
+  vs CIA, particion de update, tamano 4 GB vs 2,9 GB.
+
+## CIA-izer: modo Galaxy universal (2026-09-16 noche)
+
+- `cia::synthesize_like` + `Inputs.cia_template`: con base CCI/.3ds se
+  sintetiza un CIA con el layout de la plantilla (cabecera/TMD/offsets)
+  y los contenidos del CCI normalizado (emparejados por tamaño; la
+  partición de update se ignora). GUI: tarjeta de plantilla solo si la
+  base es .3ds/.cci + botón bloqueado hasta tenerla.
+- Experimento SN: Vimm CCI + parche_SN.xdelta + plantilla CIA del equipo
+  -> SN-from-cci.3ds OK (TitleId, tamaño idéntico a la referencia ESP,
+  arranque Azahar, ESPAÑOL visible). Paridad con la referencia: ambos
+  fallan el espejo a fondo (forzado sin rehash, esperado en Galaxy).
+- Los tres RomFS fuente (CIA equipo, CIA nuestro, CCI Vimm) son el
+  mismo byte (ebbded5..); solo cambian envoltura, ExtHeader y manual.
