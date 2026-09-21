@@ -31,9 +31,3 @@ path = ["gui/Cargo.lock", "gui/Cargo.toml", "gui/crates/**/Cargo.toml", "gui/ie-
 precedence = "aggregate"
 SPDX-FileCopyrightText = "2026, Javiju"
 SPDX-License-Identifier = "MIT"
-
-[[annotations]]
-path = ["investigacion/crash_dump_*.dmp", "investigacion/e35da044-*.png"]
-precedence = "aggregate"
-SPDX-FileCopyrightText = "2026, Luis Hidalgo Aguilar"
-SPDX-License-Identifier = "MIT"
