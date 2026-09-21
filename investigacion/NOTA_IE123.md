@@ -293,7 +293,7 @@ dorado (hashes de `ie6_a.fa`/`ie6_b.fa`).
 
 ## CIA original del equipo Galaxy (2026-09-16)
 
-- `Descargas/IEGOGalaxySupernovaDesencriptado.cia` vs nuestro CIA: mismo
+- `IEGOGalaxySupernovaDesencriptado.cia` (equipo; ahora en `Juegos/IE-Galaxy-ES/`) vs nuestro CIA: mismo
   tamaño (2949727232), TitleId y producto iguales, p0 (el juego) BYTE
   IDENTICO tras normalizar (mismos hashes ExeFS/RomFS/ExtHeader).
 - Diferencias: (1) el suyo va DESCIFRADO (enc=false), el nuestro CIFRADO
@@ -326,3 +326,110 @@ dorado (hashes de `ie6_a.fa`/`ie6_b.fa`).
   fallan el espejo a fondo (forzado sin rehash, esperado en Galaxy).
 - Los tres RomFS fuente (CIA equipo, CIA nuestro, CCI Vimm) son el
   mismo byte (ebbded5..); solo cambian envoltura, ExtHeader y manual.
+
+## Crash HW con 0.4.0 + dump2 (2026-09-17 noche)
+
+- Luis reconstruyó con la 0.4.0 publicada (Pack idéntico a 0.3.2) y el
+  crash se repite: `crash_dump_00000001.dmp` es el MISMO punto (PC
+  0x08085C50, LR 0x08028A27, `svc 0x3C`, CPSR 0x60000010); los dumps
+  solo difieren en SP/pila (ruido). Determinista, con código actual:
+  la teoría del "binario viejo" queda descartada para el archivo de
+  consola (el `_ESP.3ds` local sí era v0.3.0, pero no es ese archivo).
+- Bug cosmético real: la UI mostraba v0.3.0 porque
+  `ie-gui/Cargo.toml` seguía en 0.3.0 (el título usa
+  `CARGO_PKG_VERSION`). Subido a 0.4.1 (próxima release).
+- Rebuild local de su caso exacto (su CIA + pack-fresco) con `main`:
+  e2e verde, SHA-256 `1a7d95cd...0d2ed3`, `0x104`==slot, IVFC recrecido,
+  flags cripto == nativo. Determinista (== full-cia-v55.3ds).
+- Base .3ds de Luis (link gamehub) == CCI Vimm bit a bit (SHA
+  `35f74970...2bfd8d`); duplicado eliminado, queda el CCI.
+- Pendiente (experimento control): CIA desde el .3ds PRÍSTINO con sus
+  mismos pasos GM9 -> ¿arranca? Si también cae en el mismo PC, el
+  problema es su conversión (ticket vs contenido plano), no nuestro
+  `.3ds`. Pedir además opción exacta del menú GM9 + SHA del `.3ds`.
+
+## Extended header: 1 byte heredado (2026-09-17 noche)
+
+- El extended header (NCCH+0x200, 0x800 B) del rebuild (base CIA Luis)
+  difiere del CCI Vimm en UN solo byte: offset 0xD (u32 en 0xC: 1->3,
+  "BOLT123" + revisión). El pipeline no escribe ahí y normalize solo
+  descifra: es heredado de su CIA (otra revisión), no corrupción
+  nuestra. El original con 0x03 arranca, luego no es causa.
+- Mapa NCCH confirmado empíricamente: 0x1C0 = hash ExeFS (idéntico en
+  ambos -> ExeFS intacto), 0x160 = hash extended header, 0x140 =
+  zeros + producto. (OJO: una comparación anterior del ExHeader leyó
+  mal offset y dio 0 diff; la buena es esta.)
+- Agotada la vía de bytes: lo que viaja al CIA difiere del original
+  solo en RomFS traducido (necesario), IVFC coherente, 4 campos NCCH
+  (RSA rota, cubierta por Luma en teoría) y ese byte heredado.
+  Quedan: paso CIA de GM9 (ticket/cripto; lo decide el control del
+  prístino) y RSA-en-arranque (no testeable sin HW).
+
+## Arqueología 2026-09-17: verify, RSA, y plan de experimentos
+
+- Fuente GM9 (`gameutil.c:1755,1808`): el "Verify file" normal llama a
+  `VerifyGameFile(path, false)` -> **sig_check=FALSE**. El verde de Luis
+  NUNCA comprobó la RSA. La firma solo se mira con la opción aparte
+  "Verify signatures". Lo que sí verifica: exthdr vs 0x160, ExeFS
+  (superblock + por fichero), IVFC a fondo, tamaños/solapes.
+- 3dbrew NCCH: flags nuestros `..01030004` -> [4]=CTR, [5]=Executable,
+  [7]=0x04=**NoCrypto** + contenido plano = estado cryptofixed
+  consistente. La vía cripto queda descartada por especificación.
+- `SetNcchKey`: con NoCrypto no se monta clave (se ignora el ticket).
+  `BruteForceNcchCrypto` usa la RSA como oráculo de flags (curiosidad).
+- `VerifyCiaFile`: estructura CIA + TMD + SHA por content con titlekey
+  del ticket. Pedir a Luis que lo pase a SU cia también.
+- Plan: E0 SHA de su .3ds vs 1a7d95cd; E1 CIA del prístino con sus
+  pasos (control); E2 HxD 1 bit en zona RSA del prístino (0x4010) ->
+  aísla RSA-en-arranque; E3 LayeredFS del traducido sobre instalado
+  prístino (exonera contenido + vía de distribución alternativa);
+  E4 "verify signatures" a nuestro .3ds (documenta RSA);
+  E5 CIA-verify a su CIA; E6 escalar a Luma con dumps + versión FIRM.
+- PC/LR sin hits públicos; sin binario FIRM no se simboliza.
+
+## Veredicto HW en consola propia (2026-09-19, Old XL 11.17 + GM9 v2.2.3)
+
+- CFW vía MSET9 (trampa: crear ID1 en mount sin utf8 corrompe el nombre
+  a 84 chars y la consola lo ignora; recrear con utf8 -> 32 chars OK).
+- NAND+esenciales+SD asegurados en servidor, SHA verificado.
+- ESP-v57-rebuild.3ds (nuestro, SHA 1a7d95cd): GM9 verify normal VERDE
+  en HW; verify-with-signatures FALLA instantáneo (RSA rota, directo).
+- H4 (tamaños/hashes) MUERTA por evidencia HW. Queda H3 (RSA en
+  arranque) como única hipótesis viva para nuestro rebuild. Pendiente:
+  SD 32GB para pruebas de arranque (E2-boot decisivo + nuestro-boot).
+
+## Reproducción propia (2026-09-20, Old XL 11.17 + GM9 v2.2.3)
+
+- ESP-v57-rebuild.3ds (SHA 1a7d95cd, GM9-green) instalado directo en
+  consola propia: cae igual (Arm9, svcBreak). Dump propio:
+  PC 0x08085C50, LR 0x08028A27, CPSR 0x60000010. TRIPLE MATCH con los
+  dos dumps de Luis (solo SP difiere: ruido de pila). H1 muerta para
+  nuestro archivo; H3 (RSA en arranque) única viva. Siguiente: E2-boot.
+- Incidencias SD: perfil MSET9-residuo bloqueaba installs (.db);
+  corrupción FAT por extracciones sin umount (regla: siempre umount).
+
+## Timing + E1 propio (2026-09-20 noche)
+
+- Prístino en nuestra consola: arranca COMPLETO y jugable -> E1 aquí
+  también verde (tarjeta+método+consola+installer validados).
+- Nuestro rebuild: animación 3DS + negro, pánico donde el japonés pone
+  LEVEL-5 (primer acceso RomFS). .code carga bien (vía ExeFS OK);
+  la puerta está en montar/leer RomFS, no en abrir el título.
+  Refuerza H3 perezosa (RSA en ruta RomFS) y entierra vía-datos.
+- Pendiente E2-boot (instalando).
+
+## Layout no-canónico: 2 fixes (2026-09-21)
+
+- GM9 ignora los logical offsets del IVFC (romfs.h: "seems to be
+  useless?") y Azahar deriva: ambos verdes con cualquier valor.
+  Nintendo (prístino: L1off=0, L2off=align(s1), L3off=align(s1)+
+  align(s2)), makerom (romfs_gen.c: lo encadenado con bloque 0x1000)
+  y 3dstool-interno coinciden: offsets VIRTUALES concatenados, no
+  físicos. Nosotros escribíamos físicos (GB) -> P9 los usa al montar
+  RomFS -> pánico en primer acceso. FIX en rebuild_full.
+- 3dbrew: "filedata (aligned to 16-bytes)". Prístino: 1660/1660 doffs
+  %16==0 (205 gaps de pad). Nuestro empaquetado contiguo: 916/1660
+  desalineados. FIX: cursor alineado a 16 + pad ceros (entra en L3).
+- 3dstool (dnasdw, compilado local) valida nuestro blob: extrae 1660
+  ficheros, los 200 del manifiesto con SHA resultado OK; fórmulas de
+  niveles idénticas a las nuestras (con otra meta, otros tamaños).

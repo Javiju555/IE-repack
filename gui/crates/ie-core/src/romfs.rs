@@ -488,13 +488,19 @@ pub fn rebuild_full(
         }
     }
     // doff_antiguo -> (doff_nuevo_relativo_a_FileData, len_nueva)
+    // Los datos de cada fichero arrancan en múltiplo de 16 (canónico
+    // Nintendo: 3dbrew "filedata (aligned to 16-bytes)"; el FS de la
+    // consola lo asume para lecturas por bloques AES/DMA y GM9/Azahar
+    // no lo comprueban, así que un empaquetado contiguo pasa sus
+    // verificaciones pero tumba el hardware al primer acceso a RomFS).
+    // El relleno entre ficheros son ceros y entra en L3 (deporte IVFC).
     let mut placed: BTreeMap<u64, (u64, u64)> = BTreeMap::new();
     let mut cursor = 0u64;
     for e in &entries {
         placed.entry(e.data_off).or_insert_with(|| {
             let nl = rep_by_doff.get(&e.data_off).map(|r| r.new_len).unwrap_or(e.len);
-            let at = cursor;
-            cursor += nl;
+            let at = cursor.next_multiple_of(16);
+            cursor = at + nl;
             (at, nl)
         });
     }
@@ -518,16 +524,23 @@ pub fn rebuild_full(
         let mut o = std::fs::File::create(out)?;
         let mut done: u64;
         // Superblock con tamaños nuevos y offsets reales.
+        // Los "logical offset" de cada nivel NO son posiciones físicas:
+        // son offsets virtuales de niveles concatenados L1,L2,L3
+        // (makerom romfs_gen.c + bytes observados de Nintendo:
+        // lo1=0, lo2=align(s1), lo3=align(s1)+align(s2), bloque 0x1000).
+        // Escribir aquí offsets físicos pasa GM9 (los ignora: "useless")
+        // y Azahar (deriva), pero tumba a Nintendo FS al montar RomFS.
+        let al4k = |v: u64| v.next_multiple_of(0x1000);
         let mut nsb = [0u8; 0x60];
         nsb[0..8].copy_from_slice(b"IVFC\x00\x00\x01\x00");
         nsb[8..12].copy_from_slice(&(smn as u32).to_le_bytes());
-        nsb[12..20].copy_from_slice(&no1.to_le_bytes());
+        nsb[12..20].copy_from_slice(&0u64.to_le_bytes());
         nsb[20..28].copy_from_slice(&s1n.to_le_bytes());
         nsb[28..32].copy_from_slice(&l1.to_le_bytes());
-        nsb[36..44].copy_from_slice(&no2.to_le_bytes());
+        nsb[36..44].copy_from_slice(&al4k(s1n).to_le_bytes());
         nsb[44..52].copy_from_slice(&s2n.to_le_bytes());
         nsb[52..56].copy_from_slice(&l2.to_le_bytes());
-        nsb[60..68].copy_from_slice(&no3.to_le_bytes());
+        nsb[60..68].copy_from_slice(&(al4k(s1n) + al4k(s2n)).to_le_bytes());
         nsb[68..76].copy_from_slice(&s3n.to_le_bytes());
         nsb[76..80].copy_from_slice(&l3.to_le_bytes());
         // unknown0/1 + hueco: se conservan los originales.
@@ -574,6 +587,13 @@ pub fn rebuild_full(
         let mut buf = vec![0u8; 8 * 1024 * 1024];
         for (at, nl, d0) in order {
             check_cancel(cancel)?;
+            // Relleno a ceros hasta el doff alineado del fichero.
+            while done < no3 + fdo + at {
+                check_cancel(cancel)?;
+                let n = (no3 + fdo + at - done).min(buf.len() as u64) as usize;
+                o.write_all(&z[..n])?;
+                done += n as u64;
+            }
             debug_assert_eq!(done, no3 + fdo + at);
             if let Some(r) = rep_by_doff.get(&d0) {
                 let mut f = std::fs::File::open(&r.new_file)?;

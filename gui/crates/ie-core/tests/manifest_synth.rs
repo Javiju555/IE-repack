@@ -263,7 +263,8 @@ fn pack_sintetico_end_to_end() {
             assert_eq!(&h[..], &lvl_hash[(i as usize) * 0x20..(i as usize) * 0x20 + 0x20]);
         }
     }
-    // Tablas: f1 @0 len 7 con bytes nuevos; f2 reempaquetado @7 intacto.
+    // Tablas: f1 @0 len 7 con bytes nuevos; f2 reempaquetado @16 intacto
+    // (los datos arrancan en múltiplo de 16: canónico Nintendo).
     let fdo = u32::from_le_bytes(blob[o3 as usize + 36..o3 as usize + 40].try_into().unwrap()) as u64;
     let fbase = o3 + fdo;
     let e1o = o3 + 0x28;
@@ -274,7 +275,7 @@ fn pack_sintetico_end_to_end() {
     let e2o = e1o + (0x20u64 + 4).next_multiple_of(4);
     let e2d = u64::from_le_bytes(blob[e2o as usize + 8..e2o as usize + 16].try_into().unwrap());
     let l2n = u64::from_le_bytes(blob[e2o as usize + 16..e2o as usize + 24].try_into().unwrap());
-    assert_eq!((e2d, l2n), (7, 4));
-    assert_eq!(&blob[fbase as usize + 7..fbase as usize + 11], b"1234");
+    assert_eq!((e2d, l2n), (16, 4));
+    assert_eq!(&blob[fbase as usize + 16..fbase as usize + 20], b"1234");
     std::fs::remove_dir_all(&dir).ok();
 }
