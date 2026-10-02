@@ -26,9 +26,11 @@ mismatch`, sin quimera). Diagnóstico fino del v1 (256 ventanas):
   No-Intro, hash de arriba): entonces todo poseedor del mismo dump aplica
   en estricto, y las bases CIA mediante conversión + puerta de
   contenido (`tail -c +513`).
-- Test que lo fija: `gui/crates/ie-core/tests/ie123_strict.rs` (ignorado,
-  con los hashes v1/v1.1 publicados). Hoy falla en el paso 1 por diseño; pasará cuando
-  la base coincida.
+- Test que lo fijaba: `gui/crates/ie-core/tests/ie123_strict.rs` (ignorado,
+  con los hashes v1/v1.1 publicados). Fallaba en el paso 1 por diseño —solo
+  pasará cuando la base coincida con la del parche—, asi que se elimino
+  (2026-10-02) en vez de dejar un test rojo en el arbol. El camino bueno es
+  el modo Pack, que si esta verificado.
 
 Contexto: el proyecto de traducción al español de **Inazuma Eleven 1·2·3:
 Endou Mamoru Densetsu** (3DS, `CTR-P-AETJ`) distribuye parche +
@@ -433,3 +435,44 @@ dorado (hashes de `ie6_a.fa`/`ie6_b.fa`).
 - 3dstool (dnasdw, compilado local) valida nuestro blob: extrae 1660
   ficheros, los 200 del manifiesto con SHA resultado OK; fórmulas de
   niveles idénticas a las nuestras (con otra meta, otros tamaños).
+
+## Pack v2.0 (IE2) verde en HW (2026-09-21)
+
+- Pack v2.0 (685 ficheros, ina_main2 + inazuma2/482) con main+fix:
+  e2e OK, 0x104==slot, offsets Nintendo, 0/1660 desalineados,
+  SHA ddccff64. Instalado en Old XL: arranca y juega perfecto
+  (IE1 + IE2). Las actualizaciones de traducción no rompen el
+  pipeline corregido.
+
+## Pack v3.0 validado (2026-10-02)
+
+- Pack v3.0 (1234 ficheros: inazuma1/198, inazuma2/482, inazuma3_ogre/534,
+  cro/4, sound/2, archive.fa, import) sobre el CIA base.
+- e2e OK: **1234/1234** SHA resultado releidos de la imagen final; las
+  1234 puertas originales tambien. Salida 2.181.001.216 bytes.
+- El manifiesto declara `juego: "1.0"`: nuestra copia pasa las 1234 puertas
+  originales, luego es la 1.0 que espera el pack.
+- `formato: pack-ficheros-v1`, sin seccion `exefs` y con claves nuevas
+  (`juego`, `descripcion`) que el parser ignora -> **cambios de codigo: ninguno**.
+- Arranca en Azahar en espanol: splash de Mark Evans, "¡Siente el poder del
+  huracán!". Imagen: `dfd218f002e62839c2b251a91c1c4dfb84849499da8af9b65901505d0cff5733`.
+- Sin probar en HW (la 3DS queda para otra sesion).
+
+## Salida .cia (writer v0.5): CORRIGE la conclusion anterior
+
+- `cia::build_from_cci(CCI, donante)` monta el CIA desde el CCI ya verificado,
+  **sin volver a parchear** (3,5 s). Test ignorado `cia_real.rs`.
+- Salida v3.0: 2.181.014.528 bytes. **Instala y arranca en Azahar** (SDMC con
+  `00000000.app` + `00000001.app` + `.tmd`).
+- **"Azahar rechaza los CIAs sin firma real" era FALSO.** No es una politica
+  de firma: era el writer antiguo. El nuevo monta ticket falso al estilo GM9
+  (firma/ECDSA y titlekey a 0xFF, derechos genericos) y rehashea el TMD
+  (FixTmdHashes), que es justo lo que los instaladores verifican.
+- **Ojo: esto NO explica el HW.** En la Old XL tampoco instala el CIA japones
+  de fabrica con GM9 ("instalacion fallida", sin detalle). Ahi hay otro
+  problema, independiente de nuestro rebuild. Pistas pendientes:
+  - Los CIA de ~100 MB si instalan en esa consola -> consola, CFW y
+    sigpatches OK; el problema es de este juego/contenido, no del montaje.
+  - No descuenta por tamano de NAND: el pack v2.0 completo ya arranco en HW.
+  - Siguiente paso: un `.cia` homebrew pequeno como control, y el mensaje
+    literal del instalador. Sin el literal, cualquier hipotesis es humo.

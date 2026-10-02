@@ -38,6 +38,10 @@ struct RawManifest {
     #[allow(dead_code)]
     pub formato: String,
     pub ficheros: Vec<ManifestFile>,
+    /// Sección opcional v0.5: parches del ExeFS (`banner.bnr`, `icon.bin`).
+    /// Misma forma que `ficheros`; ausente o vacía = comportamiento actual.
+    #[serde(default)]
+    pub exefs: Vec<ManifestFile>,
 }
 
 #[derive(Debug, Clone)]
@@ -46,6 +50,7 @@ pub struct Manifest {
     pub base: String,
     pub dir: PathBuf,
     pub files: Vec<ManifestFile>,
+    pub exefs: Vec<ManifestFile>,
 }
 
 impl Manifest {
@@ -74,46 +79,10 @@ pub fn load(dir: &Path) -> Result<Manifest> {
         return Err(Error::Format("el manifiesto no trae ficheros".into()));
     }
     for f in &raw.ficheros {
-        let ruta = Path::new(&f.ruta);
-        if ruta.is_absolute() || f.ruta.split('/').any(|c| c == ".." || c.is_empty()) {
-            return Err(Error::Format(format!(
-                "ruta rara en manifiesto: {}",
-                f.ruta
-            )));
-        }
-        if f.original_size == 0 || f.resultado_size == 0 {
-            return Err(Error::Format(format!(
-                "tamaño cero en manifiesto: {}",
-                f.ruta
-            )));
-        }
-        for (tag, v) in [
-            ("original_sha256", &f.original_sha256),
-            ("resultado_sha256", &f.resultado_sha256),
-        ] {
-            if !is_hex64(v.trim()) {
-                return Err(Error::Format(format!("{tag} inválido en {}", f.ruta)));
-            }
-        }
-        let pp = dir.join(&f.parche);
-        if !pp.is_file() {
-            return Err(Error::Format(format!("falta el parche {}", f.parche)));
-        }
-        if let Some(want) = &f.parche_sha256 {
-            if !want.trim().is_empty() {
-                let got = crate::normalize::sha256_file(
-                    &pp,
-                    &std::sync::atomic::AtomicBool::new(false),
-                    &mut |_| {},
-                )?;
-                if got != want.trim().to_lowercase() {
-                    return Err(Error::Verify(format!(
-                        "el parche {} no cuadra con el manifiesto (¿descarga corrupta?)",
-                        f.parche
-                    )));
-                }
-            }
-        }
+        validate_entry(dir, f, false)?;
+    }
+    for f in &raw.exefs {
+        validate_entry(dir, f, true)?;
     }
     Ok(Manifest {
         version: if raw.version.is_empty() {
@@ -124,7 +93,70 @@ pub fn load(dir: &Path) -> Result<Manifest> {
         base: raw.base,
         dir: dir.to_path_buf(),
         files: raw.ficheros,
+        exefs: raw.exefs,
     })
+}
+
+/// Valida una entrada de `ficheros` (romfs) o de `exefs`.
+fn validate_entry(dir: &Path, f: &ManifestFile, is_exefs: bool) -> Result<()> {
+    if is_exefs {
+        // Nombre plano dentro del ExeFS y de la lista permitida.
+        if crate::exefs::normalize_name(&f.ruta).is_none() {
+            return Err(Error::Format(format!(
+                "exefs no parcheable en v1 (solo banner.bnr/icon.bin): {}",
+                f.ruta
+            )));
+        }
+        // Sin mover el layout: mismo tamaño exacto.
+        if f.original_size != f.resultado_size {
+            return Err(Error::Format(format!(
+                "{}: exefs exige mismo tamaño ({} vs {})",
+                f.ruta, f.original_size, f.resultado_size
+            )));
+        }
+    } else {
+        let ruta = Path::new(&f.ruta);
+        if ruta.is_absolute() || f.ruta.split('/').any(|c| c == ".." || c.is_empty()) {
+            return Err(Error::Format(format!(
+                "ruta rara en manifiesto: {}",
+                f.ruta
+            )));
+        }
+    }
+    if f.original_size == 0 || f.resultado_size == 0 {
+        return Err(Error::Format(format!(
+            "tamaño cero en manifiesto: {}",
+            f.ruta
+        )));
+    }
+    for (tag, v) in [
+        ("original_sha256", &f.original_sha256),
+        ("resultado_sha256", &f.resultado_sha256),
+    ] {
+        if !is_hex64(v.trim()) {
+            return Err(Error::Format(format!("{tag} inválido en {}", f.ruta)));
+        }
+    }
+    let pp = dir.join(&f.parche);
+    if !pp.is_file() {
+        return Err(Error::Format(format!("falta el parche {}", f.parche)));
+    }
+    if let Some(want) = &f.parche_sha256 {
+        if !want.trim().is_empty() {
+            let got = crate::normalize::sha256_file(
+                &pp,
+                &std::sync::atomic::AtomicBool::new(false),
+                &mut |_| {},
+            )?;
+            if got != want.trim().to_lowercase() {
+                return Err(Error::Verify(format!(
+                    "el parche {} no cuadra con el manifiesto (¿descarga corrupta?)",
+                    f.parche
+                )));
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Resumen de una línea para la tarjeta de la GUI (solo carpeta).
@@ -132,9 +164,14 @@ pub fn describe(dir: &Path) -> std::result::Result<String, String> {
     load(dir)
         .map(|m| {
             format!(
-                "{} · {} ficheros{}",
+                "{} · {} ficheros{}{}",
                 m.version,
                 m.files.len(),
+                if m.exefs.is_empty() {
+                    String::new()
+                } else {
+                    format!(" + {} exefs", m.exefs.len())
+                },
                 if m.base.is_empty() {
                     String::new()
                 } else {
@@ -161,9 +198,10 @@ pub fn describe_pack(path: &Path) -> std::result::Result<String, String> {
     let raw: RawManifest =
         serde_json::from_str(&text).map_err(|e| format!("manifiesto.json ilegible: {e}"))?;
     Ok(format!(
-        "{} · {} ficheros (.zip){}",
+        "{} · {} ficheros{} (.zip){}",
         if raw.version.is_empty() { "(sin versión)" } else { &raw.version },
         raw.ficheros.len(),
+        if raw.exefs.is_empty() { String::new() } else { format!(" + {} exefs", raw.exefs.len()) },
         if raw.base.is_empty() { String::new() } else { format!(" · base: {}", elide(&raw.base, 40)) }
     ))
 }
@@ -296,6 +334,54 @@ mod tests {
         )
         .unwrap();
         assert!(load(&dir).is_err());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    fn pack_exefs(dir: &Path, entry: &str) {
+        std::fs::create_dir_all(dir.join("parches")).unwrap();
+        std::fs::write(dir.join("parches/a.xdelta"), b"XD").unwrap();
+        std::fs::write(dir.join("parches/b.xdelta"), b"XD").unwrap();
+        std::fs::write(
+            dir.join("manifiesto.json"),
+            format!(
+                r#"{{"version":"t","ficheros":[
+                {{"ruta":"a/fa","original_size":3,"original_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","resultado_size":4,"resultado_sha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","parche":"parches/a.xdelta"}}],
+                "exefs":[{entry}]}}"#
+            ),
+        )
+        .unwrap();
+    }
+
+    fn exefs_entry(ruta: &str, os: u64, rs: u64) -> String {
+        format!(
+            r#"{{"ruta":"{ruta}","original_size":{os},"original_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","resultado_size":{rs},"resultado_sha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","parche":"parches/b.xdelta"}}"#
+        )
+    }
+
+    #[test]
+    fn exefs_valido_cuenta_en_resumen() {
+        let dir = std::env::temp_dir().join(format!("ie-manex-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        pack_exefs(&dir, &exefs_entry("banner.bnr", 5, 5));
+        let m = load(&dir).unwrap();
+        assert_eq!(m.exefs.len(), 1);
+        assert!(describe(&dir).unwrap().contains("+ 1 exefs"));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn exefs_rechaza_code_rutas_y_tamanos() {
+        let dir = std::env::temp_dir().join(format!("ie-manexbad-{}", std::process::id()));
+        for (tag, entry) in [
+            ("code", exefs_entry(".code", 3, 3)),
+            ("ruta", exefs_entry("sub/banner.bnr", 5, 5)),
+            ("size", exefs_entry("icon.bin", 5, 6)),
+        ] {
+            let d = dir.join(tag);
+            std::fs::create_dir_all(&d).unwrap();
+            pack_exefs(&d, &entry);
+            assert!(load(&d).is_err(), "{tag}");
+        }
         std::fs::remove_dir_all(&dir).ok();
     }
 }

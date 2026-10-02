@@ -337,3 +337,559 @@ pub fn synthesize_like(
     progress(total, total);
     Ok(layout)
 }
+
+/// Idiomas 3DS del SMDH que probamos, en orden: español, inglés, japonés.
+const SMDH_LANGS: [usize; 3] = [5, 1, 0];
+
+/// Título corto del SMDH para el nombre de salida.
+///
+/// Busca el SMDH en sus dos colocaciones conocidas: región meta tras el
+/// TMD (CIA estándar) y footer tras el último content (p. ej. el CIA de
+/// Luis, con `footer_size` 0x3AC0 y SMDH a +0x400). Prueba idiomas en
+/// orden español, inglés, japonés.
+///
+/// Devuelve `None` si no hay SMDH legible: la GUI usa entonces el nombre
+/// del fichero base. Nunca falla: es solo cosmética.
+pub fn smdh_short_title(path: &Path) -> Option<String> {
+    let mut f = File::open(path).ok()?;
+    let total = f.seek(SeekFrom::End(0)).ok()?;
+    f.seek(SeekFrom::Start(0)).ok()?;
+    let mut hdr = [0u8; 0x20];
+    f.read_exact(&mut hdr).ok()?;
+    if u32le(&hdr, 0) != 0x2020 {
+        return None;
+    }
+    let (cert, tik, tmd, footer) = (
+        u32le(&hdr, 0x08) as u64,
+        u32le(&hdr, 0x0C) as u64,
+        u32le(&hdr, 0x10) as u64,
+        u32le(&hdr, 0x14) as u64,
+    );
+    // Cada sección va alineada a 64 (el cert arranca en 0x2040).
+    let mut off = align64(0x2020 + cert);
+    off = align64(off + tik);
+    off = align64(off + tmd);
+    let mut cands = vec![off];
+    if footer > 0 && footer < total {
+        cands.push(total - footer);
+        cands.push(total - footer + 0x400);
+    }
+    for c in cands {
+        if let Some(t) = titles_at(&mut f, c) {
+            return Some(t);
+        }
+    }
+    None
+}
+
+fn titles_at(f: &mut File, off: u64) -> Option<String> {
+    f.seek(SeekFrom::Start(off)).ok()?;
+    let mut smdh = vec![0u8; 0x2010];
+    f.read_exact(&mut smdh).ok()?;
+    if u32le(&smdh, 0) != 0x4844_4D53 {
+        // "SMDH"
+        return None;
+    }
+    for lang in SMDH_LANGS {
+        let o = 8 + lang * 0x200;
+        let mut units = [0u16; 0x20];
+        for (i, u) in units.iter_mut().enumerate() {
+            *u = u16::from_le_bytes([smdh[o + 2 * i], smdh[o + 2 * i + 1]]);
+        }
+        let end = units.iter().position(|&u| u == 0).unwrap_or(units.len());
+        let t = String::from_utf16_lossy(&units[..end]).trim().to_owned();
+        if !t.is_empty() {
+            return Some(t);
+        }
+    }
+    None
+}
+
+/// Deja un título apto como nombre de fichero en cualquier SO: recorta
+/// espacios, sustituye `<>:"/\|?*` y controles por `_`. La eñe, los
+/// espacios y los paréntesis se conservan.
+pub fn safe_stem(title: &str) -> String {
+    let mut s: String = title
+        .trim()
+        .chars()
+        .map(|c| {
+            if c.is_control() || matches!(c, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*') {
+                '_'
+            } else {
+                c
+            }
+        })
+        .collect();
+    while s.ends_with('.') || s.ends_with(' ') {
+        s.pop();
+    }
+    if s.is_empty() {
+        s.push_str("juego");
+    }
+    s
+}
+
+fn align64(n: u64) -> u64 {
+    n.next_multiple_of(64)
+}
+
+/// Donante para salida CIA: bloques copiados del CIA original (misma
+/// TitleId). Vale con donantes "footer-style" (SMDH al final, p. ej. el
+/// CIA de Luis) y "meta-style" (meta clásica tras el TMD).
+#[derive(Debug, Clone)]
+pub struct CiaDonor {
+    pub cert: Vec<u8>,
+    pub ticket: Vec<u8>,
+    pub tmd: Vec<u8>,
+    pub meta: Vec<u8>,
+    pub footer: Vec<u8>,
+    pub title_id: u64,
+    tmd_head: usize,
+    tmd_chunks: usize,
+    tmd_count: usize,
+    tmd_siglen: usize,
+}
+
+/// Un record del TMD donante con su offset para reescribirlo.
+#[derive(Debug, Clone)]
+pub struct DonorRecord {
+    pub index: u16,
+    pub size: u64,
+    pub sha: [u8; 32],
+    rec_off: usize,
+}
+
+fn be16(b: &[u8], o: usize) -> u16 {
+    u16::from_be_bytes([b[o], b[o + 1]])
+}
+fn be32(b: &[u8], o: usize) -> u32 {
+    u32::from_be_bytes([b[o], b[o + 1], b[o + 2], b[o + 3]])
+}
+fn be64(b: &[u8], o: usize) -> u64 {
+    u64::from_be_bytes([
+        b[o], b[o + 1], b[o + 2], b[o + 3], b[o + 4], b[o + 5], b[o + 6], b[o + 7],
+    ])
+}
+
+fn tmd_sig_len(t: u32) -> Result<usize> {
+    match t {
+        // (misma tabla que find_tmd: longitudes empíricas por tipo)
+        0x10003 => Ok(0x200),
+        0x10004 => Ok(0x100),
+        0x10005 => Ok(0x3C),
+        _ => Err(Error::Format(format!("firma TMD {t:#x} no soportada"))),
+    }
+}
+
+fn read_range(f: &mut File, off: u64, len: u64) -> Result<Vec<u8>> {
+    if len > 64 * 1024 * 1024 {
+        return Err(Error::Format("sección CIA sospechosamente grande".into()));
+    }
+    let mut b = vec![0u8; len as usize];
+    f.seek(SeekFrom::Start(off))?;
+    f.read_exact(&mut b)?;
+    Ok(b)
+}
+
+pub fn read_donor(path: &Path) -> Result<CiaDonor> {
+    let mut f = File::open(path)?;
+    let total = f.seek(SeekFrom::End(0))?;
+    f.seek(SeekFrom::Start(0))?;
+    let mut hdr = [0u8; 0x20];
+    f.read_exact(&mut hdr)?;
+    if u32le(&hdr, 0) != 0x2020 {
+        return Err(Error::Format("el donante no es un CIA".into()));
+    }
+    let (cert_size, tik_size, tmd_size, meta_or_footer) = (
+        u32le(&hdr, 0x08) as u64,
+        u32le(&hdr, 0x0C) as u64,
+        u32le(&hdr, 0x10) as u64,
+        u32le(&hdr, 0x14) as u64,
+    );
+    let mut off = align64(0x2020);
+    let cert = read_range(&mut f, off, cert_size)?;
+    off = align64(off + cert_size);
+    let ticket = read_range(&mut f, off, tik_size)?;
+    off = align64(off + tik_size);
+    let tmd_off = off;
+    let tmd = find_tmd(&mut f, tmd_size, total, meta_or_footer)?;
+    let siglen = tmd_sig_len(be32(&tmd, 0))?;
+    let head = (4 + siglen + 63) & !63;
+    let count = be16(&tmd, head + 0x9E) as usize;
+    if count == 0 || count > 64 {
+        return Err(Error::Format(format!("content count raro: {count}")));
+    }
+    let chunks = head + 0xC4 + 64 * 0x24;
+    if chunks + count * 0x30 > tmd.len() {
+        return Err(Error::Format("TMD truncado en records".into()));
+    }
+    let title_id = be64(&tmd, head + 0x4C);
+    if title_id == 0 {
+        return Err(Error::Format("TMD sin TitleId".into()));
+    }
+    // ¿Meta clásica (hueco entre TMD y content0) o footer final?
+    let layout = read_layout(path)?;
+    let c0 = layout
+        .contents
+        .iter()
+        .min_by_key(|c| c.offset)
+        .ok_or_else(|| Error::Format("el donante no trae contenidos".into()))?;
+    let after_tmd = align64(tmd_off + tmd_size);
+    let (meta, footer) = if c0.offset > after_tmd {
+        (read_range(&mut f, after_tmd, c0.offset - after_tmd)?, Vec::new())
+    } else {
+        let footer = if meta_or_footer > 0 {
+            if meta_or_footer > total {
+                return Err(Error::Format("footer CIA incoherente".into()));
+            }
+            read_range(&mut f, total - meta_or_footer, meta_or_footer)?
+        } else {
+            Vec::new()
+        };
+        (Vec::new(), footer)
+    };
+    Ok(CiaDonor {
+        cert,
+        ticket,
+        tmd,
+        meta,
+        footer,
+        title_id,
+        tmd_head: head,
+        tmd_chunks: chunks,
+        tmd_count: count,
+        tmd_siglen: siglen,
+    })
+}
+
+impl CiaDonor {
+    pub fn records(&self) -> Vec<DonorRecord> {
+        (0..self.tmd_count)
+            .map(|i| {
+                let o = self.tmd_chunks + i * 0x30;
+                let mut sha = [0u8; 32];
+                sha.copy_from_slice(&self.tmd[o + 16..o + 48]);
+                DonorRecord {
+                    index: be16(&self.tmd, o + 4),
+                    size: be64(&self.tmd, o + 8),
+                    sha,
+                    rec_off: o,
+                }
+            })
+            .collect()
+    }
+}
+
+/// TitleId del CCI (partición 0) para emparejar con el donante.
+fn cci_title_id(cci: &Path) -> Result<u64> {
+    let slots = crate::cci::partitions_indexed(cci)?;
+    let (_, p0, _) = *slots
+        .first()
+        .ok_or_else(|| Error::Format("CCI sin particiones".into()))?;
+    let mut f = File::open(cci)?;
+    let mut ncch = [0u8; 0x200];
+    f.seek(SeekFrom::Start(p0))?;
+    f.read_exact(&mut ncch)?;
+    if u32le(&ncch, 0x100) != 0x4843_434E {
+        return Err(Error::Format("partición 0 sin magia NCCH".into()));
+    }
+    Ok(u64::from_le_bytes(ncch[0x108..0x110].try_into().unwrap()))
+}
+
+/// Ticket falso estilo GM9 (BuildFakeTicket/BuildVariableFakeTicket):
+/// firma y ECDSA a 0xFF, titlekey a 0xFF, derechos genéricos para 64
+/// contents. Es lo que monta GM9 al construir CIAs; converge byte a byte
+/// con su referencia. El ticket del donante (aunque traiga firma válida)
+/// se sustituye: el falso es el formato instalable estándar.
+pub fn build_fake_ticket(title_id: u64) -> Vec<u8> {
+    let mut t = vec![0u8; 0x350];
+    t[0..4].copy_from_slice(&0x10004u32.to_be_bytes());
+    for b in t[4..0x104].iter_mut() {
+        *b = 0xFF;
+    }
+    // padding1 [0x104..0x140] a cero
+    t[0x140..0x140 + 26].copy_from_slice(b"Root-CA00000003-XS0000000c");
+    for b in t[0x180..0x1BC].iter_mut() {
+        *b = 0xFF;
+    } // ecdsa
+    t[0x1BC] = 0x01; // version
+    for b in t[0x1BF..0x1CF].iter_mut() {
+        *b = 0xFF;
+    } // titlekey
+    t[0x1DC..0x1E4].copy_from_slice(&title_id.to_be_bytes());
+    // commonkey_idx eshop (0x1F1) y reserva ya a cero; audit = 1
+    t[0x221] = 0x01;
+    // content_index: 1 rights field (64 contents máx)
+    let ci = 0x2A4;
+    t[ci + 1] = 0x01;
+    t[ci + 3] = 0x14;
+    t[ci + 4..ci + 8].copy_from_slice(&0xACu32.to_be_bytes());
+    t[ci + 11] = 0x14;
+    t[ci + 13] = 0x01;
+    t[ci + 15] = 0x14;
+    t[ci + 0x14 + 3] = 0x28;
+    t[ci + 0x14 + 7] = 0x01; // max_entry_count = 1
+    t[ci + 0x14 + 11] = 0x84; // size_per_entry
+    t[ci + 0x14 + 15] = 0x84; // total_size_used
+    t[ci + 0x14 + 17] = 0x03; // data_type = rights
+    for b in t[ci + 0x28 + 4..ci + 0x28 + 0x84].iter_mut() {
+        *b = 0xFF;
+    } // rightsbitfield (indexoffset y 2 previos a cero, como GM9)
+    t
+}
+
+/// Construye un CIA instalable desde un CCI descifrado + CIA donante.
+///
+/// Política: los contents son los records del donante en orden de índice,
+/// tomados de los slots del CCI; solo la partición 0 puede cambiar (el
+/// resto debe ser byte-idéntico al donante: puerta). El TMD se reescribe
+/// (tamaños + SHAs de records + rehash contentinfo al estilo GM9
+/// FixTmdHashes, que los instaladores verifican) con la firma a 0xFF
+/// (convención GM9: el cero se lee como ausente) y ticket falso generado —
+/// hace falta CFW con parches de firma (Luma por defecto) para instalarlo,
+/// igual que un CIA montado desde `.3ds` con GodMode9. Cert y footer/meta
+/// (SMDH) se conservan del donante.
+pub fn build_from_cci(
+    cci: &Path,
+    donor_cia: &Path,
+    out_cia: &Path,
+    cancel: &AtomicBool,
+    mut prog: impl FnMut(u64, u64),
+) -> Result<()> {
+    use std::sync::atomic::Ordering;
+    let donor = read_donor(donor_cia)?;
+    if cci_title_id(cci)? != donor.title_id {
+        return Err(Error::Verify(
+            "el donante es de otro juego (TitleId distinto)".into(),
+        ));
+    }
+    let slots = crate::cci::partitions_indexed(cci)?;
+    let mut recs = donor.records();
+    recs.sort_by_key(|r| r.index);
+    // Puerta: todo slot no-juego debe ser idéntico al donante.
+    let dlayout = read_layout(donor_cia)?;
+    struct NewContent {
+        index: u16,
+        src_off: u64,
+        size: u64,
+        sha: [u8; 32],
+    }
+    let mut new_contents = Vec::with_capacity(recs.len());
+    for r in &recs {
+        if cancel.load(Ordering::Relaxed) {
+            return Err(Error::Cancelled);
+        }
+        let (_, soff, ssize) = *slots
+            .iter()
+            .find(|(i, _, _)| *i as u16 == r.index)
+            .ok_or_else(|| {
+                Error::Format(format!("el CCI no trae la partición {}", r.index))
+            })?;
+        let sha = stream_sha(cci, soff, ssize, cancel, &mut |_, _| {})?;
+        if r.index != 0 {
+            let d = dlayout.contents.iter().find(|c| c.index == r.index).ok_or_else(|| {
+                Error::Format(format!("el donante no trae content{}", r.index))
+            })?;
+            let dsha = stream_sha(donor_cia, d.offset, d.size, cancel, &mut |_, _| {})?;
+            if sha != dsha || ssize != d.size {
+                return Err(Error::Verify(format!(
+                    "la partición {} cambió y no es el juego (pack no soportado)",
+                    r.index
+                )));
+            }
+        }
+        new_contents.push(NewContent { index: r.index, src_off: soff, size: ssize, sha: unhex(&sha)? });
+    }
+    // TMD nuevo: records al día + contentinfo rehecho (espejo de GM9
+    // FixTmdHashes: los instaladores verifican estas cadenas) + firma a
+    // cero (fakesign: instala con CFW).
+    let mut tmd = donor.tmd.clone();
+    for (r, n) in recs.iter().zip(new_contents.iter()) {
+        tmd[r.rec_off + 8..r.rec_off + 16].copy_from_slice(&n.size.to_be_bytes());
+        tmd[r.rec_off + 16..r.rec_off + 48].copy_from_slice(&n.sha);
+    }
+    {
+        use sha2::{Digest, Sha256};
+        let chunks = donor.tmd_chunks;
+        let cib = chunks - 64 * 0x24;
+        // Espejo exacto de GM9 FixTmdHashes: se sale en cuanto kc cubre
+        // los contents (las entradas sobrantes con k=0 se dejan como
+        // están, a cero como las deja BuildFakeTmd).
+        let mut kc = 0usize;
+        for i in 0..64 {
+            if kc >= donor.tmd_count {
+                break;
+            }
+            let eo = cib + i * 0x24;
+            let k = be16(&tmd, eo + 2) as usize;
+            let h = Sha256::digest(&tmd[chunks + kc * 0x30..chunks + (kc + k) * 0x30]);
+            tmd[eo + 4..eo + 36].copy_from_slice(&h);
+            kc += k;
+        }
+        let master = Sha256::digest(&tmd[cib..cib + 64 * 0x24]);
+        tmd[cib - 0x20..cib].copy_from_slice(&master);
+    }
+    // Firma a 0xFF (convención GM9 BuildFakeTmd: cero significa
+    // "ausente/corrupto" para algunos chequeos; 0xFF es "falso asumido").
+    // Solo la firma en sí: el padding posterior va a cero como en GM9.
+    let sig_end = 4 + donor.tmd_siglen;
+    for b in tmd[4..sig_end].iter_mut() {
+        *b = 0xFF;
+    }
+    for b in tmd[sig_end..donor.tmd_head].iter_mut() {
+        *b = 0x00;
+    }
+    // Ensambla: cabecera + secciones alineadas a 64 + contents + meta/footer.
+    // Ticket falso generado (el del donante no se reutiliza).
+    let ticket = build_fake_ticket(donor.title_id);
+    let sections: [&[u8]; 3] = [&donor.cert, &ticket, &tmd];
+    let content_total: u64 = new_contents.iter().map(|c| c.size).sum();
+    let mut hdr = [0u8; 0x20];
+    hdr[0..4].copy_from_slice(&0x2020u32.to_le_bytes());
+    hdr[0x08..0x0C].copy_from_slice(&(donor.cert.len() as u32).to_le_bytes());
+    hdr[0x0C..0x10].copy_from_slice(&(ticket.len() as u32).to_le_bytes());
+    hdr[0x10..0x14].copy_from_slice(&(tmd.len() as u32).to_le_bytes());
+    let tail_len = (donor.meta.len() + donor.footer.len()) as u64;
+    hdr[0x14..0x18].copy_from_slice(&(tail_len as u32).to_le_bytes());
+    hdr[0x18..0x1C].copy_from_slice(&(content_total as u32).to_le_bytes());
+    if let Some(p) = out_cia.parent() {
+        if !p.as_os_str().is_empty() {
+            std::fs::create_dir_all(p)?;
+        }
+    }
+    let mut o = File::create(out_cia)?;
+    o.write_all(&hdr)?;
+    // Bitmap de contents [0x20..0x2020] (espejo de GM9 FixCiaHeaderForTmd):
+    // sin estos bits los instaladores ven "0/N contents" y saltan todo
+    // (verify verde instantáneo + install que muere al instante).
+    {
+        let mut cindex = [0u8; 0x2000];
+        for n in &new_contents {
+            cindex[n.index as usize / 8] |= 1 << (7 - (n.index % 8));
+        }
+        o.write_all(&cindex)?;
+    }
+    // Las secciones van contiguas desde el fin de la cabecera (0x2020),
+    // cada una alineada a 64: la primera (cert) arranca en 0x2040, no en
+    // 0x2020. Sin ese alineado inicial todo queda 0x20 corrido y el cert
+    // ilegible (bug que tumbaba la instalación).
+    o.seek(SeekFrom::Start(align64(0x2020)))?;
+    let mut cur = align64(0x2020);
+    let mut pad_to_64 = |o: &mut File, cur: &mut u64| -> Result<()> {
+        let pad = pad64(*cur) - *cur;
+        if pad > 0 {
+            o.write_all(&vec![0u8; pad as usize])?;
+            *cur += pad;
+        }
+        Ok(())
+    };
+    for s in sections {
+        if cancel.load(Ordering::Relaxed) {
+            return Err(Error::Cancelled);
+        }
+        o.write_all(s)?;
+        cur += s.len() as u64;
+        pad_to_64(&mut o, &mut cur)?;
+        prog(cur, content_total.saturating_add(cur));
+    }
+    if !donor.meta.is_empty() {
+        o.write_all(&donor.meta)?;
+        cur += donor.meta.len() as u64;
+        pad_to_64(&mut o, &mut cur)?;
+    }
+    let mut f = File::open(cci)?;
+    let mut buf = vec![0u8; 8 * 1024 * 1024];
+    let mut cdone = 0u64;
+    for n in &new_contents {
+        if cancel.load(Ordering::Relaxed) {
+            return Err(Error::Cancelled);
+        }
+        f.seek(SeekFrom::Start(n.src_off))?;
+        let mut left = n.size;
+        while left > 0 {
+            let k = left.min(buf.len() as u64) as usize;
+            f.read_exact(&mut buf[..k])?;
+            o.write_all(&buf[..k])?;
+            left -= k as u64;
+            cdone += k as u64;
+            prog(cdone, content_total);
+        }
+        cur += n.size;
+        pad_to_64(&mut o, &mut cur)?;
+    }
+    if !donor.footer.is_empty() {
+        o.write_all(&donor.footer)?;
+    }
+    o.flush()?;
+    drop(o);
+    // Verifica: re-parsea + NCCH por content + SHAs del TMD.
+    let back = read_donor(out_cia)?;
+    if back.title_id != donor.title_id || back.records().len() != recs.len() {
+        return Err(Error::Verify("el CIA generado no re-parsea (bug interno)".into()));
+    }
+    let bl = read_layout(out_cia)?;
+    for n in &new_contents {
+        let c = bl.contents.iter().find(|c| c.index == n.index).ok_or_else(|| {
+            Error::Verify("content perdido en el CIA generado (bug interno)".into())
+        })?;
+        let r = back
+            .records()
+            .into_iter()
+            .find(|r| r.index == n.index)
+            .ok_or_else(|| Error::Verify("record perdido en el CIA generado (bug interno)".into()))?;
+        if c.size != n.size || r.sha != n.sha {
+            return Err(Error::Verify("record incoherente en el CIA generado (bug interno)".into()));
+        }
+    }
+    prog(content_total, content_total);
+    Ok(())
+}
+
+fn pad64(n: u64) -> u64 {
+    n.next_multiple_of(64)
+}
+
+fn stream_sha(
+    path: &Path,
+    off: u64,
+    len: u64,
+    cancel: &AtomicBool,
+    mut on_chunk: impl FnMut(u64, u64),
+) -> Result<String> {
+    use sha2::{Digest, Sha256};
+    use std::sync::atomic::Ordering;
+    let mut f = File::open(path)?;
+    f.seek(SeekFrom::Start(off))?;
+    let mut h = Sha256::new();
+    let mut buf = vec![0u8; 8 * 1024 * 1024];
+    let mut left = len;
+    let mut done = 0u64;
+    while left > 0 {
+        if cancel.load(Ordering::Relaxed) {
+            return Err(Error::Cancelled);
+        }
+        let k = left.min(buf.len() as u64) as usize;
+        f.read_exact(&mut buf[..k])?;
+        h.update(&buf[..k]);
+        left -= k as u64;
+        done += k as u64;
+        on_chunk(done, len);
+    }
+    Ok(hex_of(&h.finalize()))
+}
+
+fn hex_of(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+fn unhex(s: &str) -> Result<[u8; 32]> {
+    if s.len() != 64 {
+        return Err(Error::Format("sha hex inválido".into()));
+    }
+    let mut out = [0u8; 32];
+    for i in 0..32 {
+        out[i] = u8::from_str_radix(&s[2 * i..2 * i + 2], 16)
+            .map_err(|_| Error::Format("sha hex inválido".into()))?;
+    }
+    Ok(out)
+}

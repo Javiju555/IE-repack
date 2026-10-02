@@ -92,6 +92,8 @@ pub struct App {
     template_info: String,
     template_ok: bool,
     out: String,
+    /// Formato de salida (v0.5): `.3ds` o `.cia` directo (necesita donante).
+    out_cia: bool,
     // Estado del modo genérico.
     g_base: Option<PathBuf>,
     g_base_info: String,
@@ -169,6 +171,7 @@ impl Default for App {
             template_info: "Sin seleccionar".into(),
             template_ok: false,
             out: String::new(),
+            out_cia: false,
             g_base: None,
             g_base_info: "Sin seleccionar".into(),
             g_base_ok: false,
@@ -230,7 +233,7 @@ impl App {
                 self.base_ok = true;
                 self.push_log(format!("Base: {} ({info})", path.display()));
                 if self.out.is_empty() {
-                    self.out = default_out(&path);
+                    self.out = default_out(&path, self.out_cia);
                 }
             }
             Err(e) => {
@@ -295,7 +298,7 @@ impl App {
                 self.g_base_ok = true;
                 self.push_log(format!("Base: {} ({info})", path.display()));
                 if self.out.is_empty() {
-                    self.out = default_out(&path);
+                    self.out = default_out(&path, self.out_cia);
                 }
             }
             Err(e) => {
@@ -330,7 +333,7 @@ impl App {
                 self.m_base_ok = true;
                 self.push_log(format!("Base: {} ({info})", path.display()));
                 if self.out.is_empty() {
-                    self.out = default_out(&path);
+                    self.out = default_out(&path, self.out_cia);
                 }
             }
             Err(e) => {
@@ -382,7 +385,7 @@ impl App {
         let base = self.m_base.clone().unwrap();
         let pack = self.m_pack.clone().unwrap();
         if self.out.trim().is_empty() {
-            self.out = default_out(&base);
+            self.out = default_out(&base, self.out_cia);
         }
         let out = PathBuf::from(self.out.trim());
         if let Some(parent) = out.parent() {
@@ -400,9 +403,10 @@ impl App {
         self.rx = Some(rx);
         let cancel = self.cancel.clone();
         self.push_log(format!("Pack {} sobre {} ...", pack.display(), base.display()));
+        let (want_cia, donor) = (self.out_cia, self.cia_donor());
         std::thread::spawn(move || {
             let r = pipeline::run_manifest(
-                &pipeline::ManifestInputs { base, pack_dir: pack, out_cci: out, keep_work: false },
+                &pipeline::ManifestInputs { base, pack_dir: pack, out_cci: out, keep_work: false, want_cia, cia_donor: donor },
                 &cancel,
                 &mut |p| {
                     tx.send(WorkerMsg::Progress(p)).ok();
@@ -445,7 +449,7 @@ impl App {
             _ => return,
         };
         if self.out.trim().is_empty() {
-            self.out = default_out(&base);
+            self.out = default_out(&base, self.out_cia);
         }
         let out = PathBuf::from(self.out.trim());
         if let Some(parent) = out.parent() {
@@ -464,8 +468,9 @@ impl App {
         let cancel = self.cancel.clone();
         self.push_log(format!("Procesando {} ...", base.display()));
         let template = self.template.clone();
+        let (want_cia, donor) = (self.out_cia, self.cia_donor());
         std::thread::spawn(move || {
-            let inputs = pipeline::Inputs { base_cia: base, patch, out_3ds: out, keep_work: false, cia_template: template };
+            let inputs = pipeline::Inputs { base_cia: base, patch, out_3ds: out, keep_work: false, cia_template: template, want_cia, cia_donor: donor };
             let r = pipeline::run(
                 &inputs,
                 &cancel,
@@ -488,7 +493,7 @@ impl App {
         let base = self.g_base.clone().unwrap();
         let patches_in = self.g_patches.clone();
         if self.out.trim().is_empty() {
-            self.out = default_out(&base);
+            self.out = default_out(&base, self.out_cia);
         }
         let out = PathBuf::from(self.out.trim());
         if let Some(parent) = out.parent() {
@@ -508,6 +513,7 @@ impl App {
         let sha = self.g_sha.trim().to_owned();
         let sha_content = self.g_sha_content.trim().to_owned();
         self.push_log(format!("Procesando {} con {} parche(s) ...", base.display(), patches_in.len()));
+        let (want_cia, donor) = (self.out_cia, self.cia_donor());
         std::thread::spawn(move || {
             let r = (|| -> Result<(), ie_core::error::Error> {
                 // Temporal para los .xdelta extraídos de zips.
@@ -541,6 +547,8 @@ impl App {
                         expected_content_sha256: if sha_content.is_empty() { None } else { Some(sha_content) },
                         out_cci: out,
                         keep_work: false,
+                        want_cia,
+                        cia_donor: donor,
                     },
                     &cancel,
                     &mut |p| {
@@ -590,7 +598,7 @@ impl App {
             match r {
                 Ok(()) => {
                     self.overall = 1.0;
-                    let msg = format!("Listo: {}", self.out.trim());
+                    let msg = format!("Listo: {}", self.final_out_display());
                     self.push_log(msg.clone());
                     self.result = Some(Ok(msg));
                 }
@@ -688,12 +696,66 @@ fn describe_patch(path: &PathBuf) -> Result<String, String> {
     }
 }
 
-fn default_out(base: &PathBuf) -> String {
-    let stem = base.file_stem().and_then(|s| s.to_str()).unwrap_or("salida");
-    let name = format!("{stem}_ESP.3ds");
+fn default_out(base: &PathBuf, cia: bool) -> String {
+    // El nombre sale del SMDH del CIA base (español -> inglés -> japonés)
+    // y si no hay (base .3ds/.cci o ilegible), del fichero de entrada.
+    let stem = match base.extension().and_then(|e| e.to_str()) {
+        Some(e) if e.eq_ignore_ascii_case("cia") => ie_core::cia::smdh_short_title(base),
+        _ => None,
+    }
+    .map(|t| ie_core::cia::safe_stem(&t))
+    .filter(|s| !s.is_empty())
+    .unwrap_or_else(|| {
+        let raw = base.file_stem().and_then(|s| s.to_str()).unwrap_or("juego");
+        ie_core::cia::safe_stem(raw)
+    });
+    let ext = if cia { "cia" } else { "3ds" };
+    let name = format!("{stem} (español).{ext}");
     match base.parent() {
         Some(p) if !p.as_os_str().is_empty() => p.join(name).to_string_lossy().into_owned(),
         _ => name,
+    }
+}
+
+impl App {
+    /// Donante CIA para salida `.cia`: la base si es CIA, o la plantilla
+    /// en modo Galaxy. `None` = formato CIA no disponible en este modo.
+    fn cia_donor(&self) -> Option<PathBuf> {
+        let is_cia = |p: &Option<PathBuf>| match p {
+            Some(b)
+                if b
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .is_some_and(|e| e.eq_ignore_ascii_case("cia")) =>
+            {
+                Some(b.clone())
+            }
+            _ => None,
+        };
+        match self.mode {
+            Mode::Galaxy => is_cia(&self.base).or_else(|| self.template.clone()),
+            Mode::Pack => is_cia(&self.m_base),
+            Mode::Generic => is_cia(&self.g_base),
+        }
+    }
+
+    /// Cambia el formato de salida ajustando la extensión visible.
+    fn set_out_format(&mut self, cia: bool) {
+        self.out_cia = cia;
+        if !self.out.trim().is_empty() {
+            let p =
+                PathBuf::from(self.out.trim()).with_extension(if cia { "cia" } else { "3ds" });
+            self.out = p.to_string_lossy().into_owned();
+        }
+    }
+
+    /// Ruta final mostrada al terminar (coherente con el formato elegido,
+    /// aunque el texto se editara a mano con otra extensión).
+    fn final_out_display(&self) -> String {
+        PathBuf::from(self.out.trim())
+            .with_extension(if self.out_cia { "cia" } else { "3ds" })
+            .to_string_lossy()
+            .into_owned()
     }
 }
 
@@ -1069,16 +1131,55 @@ impl eframe::App for App {
             // desborde reportado (Examinar... en x=837 con ventana de 780).
             egui::Frame::group(ui.style()).inner_margin(10.0).show(ui, |ui| {
                 ui.horizontal(|ui| {
-                    ui.strong("3. Guardar .3ds en:");
+                    ui.strong("3. Formato:");
+                    let donor_ok = self.cia_donor().is_some();
+                    if ui
+                        .add_enabled(!self.running, egui::RadioButton::new(!self.out_cia, ".3ds"))
+                        .clicked()
+                    {
+                        self.set_out_format(false);
+                    }
+                    if ui
+                        .add_enabled(!self.running && donor_ok, egui::RadioButton::new(self.out_cia, ".cia"))
+                        .on_disabled_hover_text("El .cia se envuelve desde un CIA donante: usa base CIA (o plantilla CIA en modo Galaxy)")
+                        .clicked()
+                    {
+                        self.set_out_format(true);
+                    }
+                    if !donor_ok {
+                        ui.weak("(el .cia necesita base o plantilla CIA)");
+                    } else if self.out_cia {
+                        ui.weak("(instala con CFW + parches de firma)");
+                    }
+                });
+                ui.horizontal(|ui| {
+                    ui.strong("Guardar en:");
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if ui.button("Examinar...").clicked() && !self.running {
-                            let suggest = match self.mode {
-                                Mode::Galaxy => "galaxy_esp.3ds",
-                                Mode::Pack => "juego_esp.3ds",
-                                Mode::Generic => "juego_parcheado.3ds",
+                            // Sugiere el nombre por defecto ya calculado (o un
+                            // genérico con la misma convención si aún no hay base).
+                            let ext = if self.out_cia { "cia" } else { "3ds" };
+                            let suggest = Path::new(&self.out)
+                                .file_name()
+                                .and_then(|s| s.to_str())
+                                .map(|s| {
+                                    PathBuf::from(s)
+                                        .with_extension(ext)
+                                        .to_string_lossy()
+                                        .into_owned()
+                                })
+                                .unwrap_or_else(|| match self.mode {
+                                    Mode::Galaxy => format!("galaxy (español).{ext}"),
+                                    Mode::Pack => format!("juego (español).{ext}"),
+                                    Mode::Generic => format!("juego (español).{ext}"),
+                                });
+                            let (flt_name, flt_ext): (&str, &[&str]) = if self.out_cia {
+                                ("Paquete CIA", &["cia"])
+                            } else {
+                                ("Imagen 3DS", &["3ds"])
                             };
                             if let Some(p) = rfd::FileDialog::new()
-                                .add_filter("Imagen 3DS", &["3ds"])
+                                .add_filter(flt_name, flt_ext)
                                 .set_file_name(suggest)
                                 .save_file()
                             {
@@ -1097,7 +1198,7 @@ impl eframe::App for App {
                 Mode::Galaxy => (
                     self.base_ok && self.patch_ok && !self.out.trim().is_empty() && !self.running
                         && (!self.base_needs_template() || self.template_ok),
-                    "Crear .3ds en español",
+                    if self.out_cia { "Crear .cia en español" } else { "Crear .3ds en español" },
                 ),
                 Mode::Pack => (
                     self.m_base_ok && self.m_pack_ok && self.manifest_ready().is_empty() && !self.running,
@@ -1276,6 +1377,35 @@ mod tests {
         assert!(corto.chars().count() <= 38);
         assert!(corto.contains("..."));
         assert!(corto.ends_with("(Japan).cia"));
+    }
+
+    #[test]
+    fn salida_por_defecto_hereda_nombre_mas_espanol() {
+        // Sin SMDH (fichero inexistente o base .3ds) cae al stem de entrada.
+        let b = PathBuf::from("/tmp/MiJuego.cia");
+        assert_eq!(default_out(&b, false), "/tmp/MiJuego (español).3ds");
+        assert_eq!(default_out(&b, true), "/tmp/MiJuego (español).cia");
+        let c = PathBuf::from("base.3ds");
+        assert_eq!(default_out(&c, false), "base (español).3ds");
+    }
+
+    #[test]
+    fn formato_cambia_extension_y_donante() {
+        let mut app = App::default();
+        app.mode = Mode::Pack;
+        app.out = "/tmp/Juego (español).3ds".into();
+        // Sin base CIA no hay donante: el .cia no procede.
+        app.m_base = Some(PathBuf::from("/tmp/base.3ds"));
+        assert!(app.cia_donor().is_none());
+        app.set_out_format(true);
+        assert!(app.out_cia);
+        assert_eq!(app.out, "/tmp/Juego (español).cia");
+        assert_eq!(app.final_out_display(), "/tmp/Juego (español).cia");
+        // Con base CIA sí hay donante.
+        app.m_base = Some(PathBuf::from("/tmp/base.CIA"));
+        assert_eq!(app.cia_donor(), Some(PathBuf::from("/tmp/base.CIA")));
+        app.set_out_format(false);
+        assert_eq!(app.out, "/tmp/Juego (español).3ds");
     }
 
     /// La UI completa con rutas largas cabe en 780 px en ambos modos: ningún

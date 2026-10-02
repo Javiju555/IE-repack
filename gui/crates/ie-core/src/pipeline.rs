@@ -39,6 +39,10 @@ pub struct Inputs {
     /// se reconstruyen desde el CCI normalizado. Vale cualquier CIA
     /// original del mismo juego y revisión (solo se copia su layout).
     pub cia_template: Option<PathBuf>,
+    /// Salida CIA directa (v0.5): tras el `.3ds` verificado se envuelve en
+    /// CIA con `cia_donor` (base CIA o plantilla).
+    pub want_cia: bool,
+    pub cia_donor: Option<PathBuf>,
 }
 
 const STAGES: [(&str, f32); 7] = [
@@ -90,6 +94,37 @@ fn work_dir_for(out_3ds: &Path) -> Result<PathBuf> {
         .map(|d| d.as_nanos())
         .unwrap_or(0);
     Ok(parent.join(format!(".ie-work-{pid}-{nanos:x}")))
+}
+
+/// Post-paso CIA (v0.5): si `want_cia`, envuelve el `.3ds` recién
+/// verificado en un CIA con el donante y devuelve la ruta final (hermana
+/// con extensión `.cia`); si no, devuelve el `.3ds` tal cual. Sin
+/// `keep_work` el `.3ds` intermedio se borra.
+pub fn finish_format(
+    built_3ds: &Path,
+    want_cia: bool,
+    donor: &Option<PathBuf>,
+    keep_work: bool,
+    cancel: &AtomicBool,
+    byte_prog: &mut dyn FnMut(u64, u64),
+) -> Result<PathBuf> {
+    if !want_cia {
+        return Ok(built_3ds.to_path_buf());
+    }
+    let d = donor.clone().ok_or_else(|| {
+        Error::Format(
+            "salida CIA sin donante: usa una base CIA (o plantilla CIA en modo Galaxy)".into(),
+        )
+    })?;
+    let out_cia = built_3ds.with_extension("cia");
+    if out_cia.exists() {
+        std::fs::remove_file(&out_cia)?;
+    }
+    crate::cia::build_from_cci(built_3ds, &d, &out_cia, cancel, byte_prog)?;
+    if !keep_work {
+        std::fs::remove_file(built_3ds).ok();
+    }
+    Ok(out_cia)
 }
 
 /// Extrae el único `.xdelta` del `.zip` (misma regla que rebuild.sh).
@@ -313,6 +348,10 @@ pub fn run(inp: &Inputs, cancel: &AtomicBool, prog: &mut dyn FnMut(StageProgress
         })?;
         crate::cci::verify_cci(&inp.out_3ds)?;
         emit(6, fc0.size + fc1.size, fc0.size + fc1.size);
+        // 7. Salida CIA opcional (mismo .3ds verificado, envuelto).
+        finish_format(&inp.out_3ds, inp.want_cia, &inp.cia_donor, inp.keep_work, cancel, &mut |d, t| {
+            emit(6, d, t);
+        })?;
         Ok(())
     })();
 
@@ -349,6 +388,10 @@ pub struct ManifestInputs {
     pub pack_dir: PathBuf,
     pub out_cci: PathBuf,
     pub keep_work: bool,
+    /// Salida CIA directa (v0.5): tras el `.3ds` verificado se envuelve en
+    /// CIA con `cia_donor` (la base CIA).
+    pub want_cia: bool,
+    pub cia_donor: Option<PathBuf>,
 }
 
 const MANIFEST_STAGES: [(&str, f32); 7] = [
@@ -732,6 +775,75 @@ pub fn run_manifest(
             f.flush()?;
         }
 
+        // 5b. ExeFS (v0.5, opcional): banner/icon por manifiesto. El ExeFS
+        // viene copiado verbatim en el prefijo: se empalma mismo tamaño,
+        // se rehashea el fichero y el superblock (0x1C0). La etapa 6
+        // re-verifica los SHAs desde la imagen final.
+        if !mani.exefs.is_empty() {
+            let eabs = p0_off + hdr.exefs_off;
+            if hdr.exefs_size == 0 || hdr.exefs_size > 64 * 1024 * 1024 {
+                return Err(Error::Format("ExeFS base incoherente".into()));
+            }
+            let mut blob = vec![0u8; hdr.exefs_size as usize];
+            {
+                let mut f = std::fs::File::open(&tmp_out)?;
+                f.seek(SeekFrom::Start(eabs))?;
+                f.read_exact(&mut blob)?;
+            }
+            for (i, xf) in mani.exefs.iter().enumerate() {
+                check_cancel(cancel)?;
+                let name = crate::exefs::normalize_name(&xf.ruta).ok_or_else(|| {
+                    Error::Format(format!("exefs no parcheable: {}", xf.ruta))
+                })?;
+                let dir = crate::exefs::read_dir(&blob)?;
+                let e = dir.iter().find(|e| e.name == name).ok_or_else(|| {
+                    Error::Verify(format!("el ExeFS base no trae {name} (¿base válida?)"))
+                })?;
+                if e.size as u64 != xf.original_size {
+                    return Err(Error::Verify(format!(
+                        "{name}: tamaño original distinto ({} vs {})",
+                        e.size, xf.original_size
+                    )));
+                }
+                let (s, _) = crate::exefs::data_range(blob.len() as u64, e);
+                let orig_tmp = work.join(format!("exorig{i}.bin"));
+                let res_tmp = work.join(format!("exres{i}.bin"));
+                {
+                    let mut o = std::fs::File::create(&orig_tmp)?;
+                    copy_range_stream(&tmp_out, eabs + s, e.size as u64, &mut o, cancel, &mut |_| {})?;
+                    o.flush()?;
+                }
+                let got_o = crate::normalize::sha256_file(&orig_tmp, cancel, &mut |_| {})?;
+                if got_o != xf.original_sha256.to_lowercase() {
+                    return Err(Error::Verify(format!("{name}: original distinto al del manifiesto")));
+                }
+                let patch = mani.patch_path(xf);
+                crate::xdelta::decode_strict(&xb, &orig_tmp, &patch, &res_tmp, xf.resultado_size, cancel, &mut |_, _| {})?;
+                std::fs::remove_file(&orig_tmp).ok();
+                let res = std::fs::read(&res_tmp)?;
+                std::fs::remove_file(&res_tmp).ok();
+                let got = crate::normalize::sha256_bytes(&res);
+                if got != xf.resultado_sha256.to_lowercase() {
+                    return Err(Error::Verify(format!("{}: el parche no da lo esperado", xf.ruta)));
+                }
+                crate::exefs::apply(&mut blob, &name, &res)?;
+                emit(5, new_total, new_total);
+            }
+            let mut f = std::fs::OpenOptions::new().read(true).write(true).open(&tmp_out)?;
+            f.seek(SeekFrom::Start(eabs))?;
+            f.write_all(&blob)?;
+            let mut nh2 = [0u8; 0x200];
+            f.seek(SeekFrom::Start(p0_off))?;
+            f.read_exact(&mut nh2)?;
+            let media2 = 1u64 << (nh2[0x18E] + 9);
+            let exhs = u32::from_le_bytes(nh2[0x1A8..0x1AC].try_into().unwrap()) as u64 * media2;
+            let sb = crate::exefs::superblock_hash(&blob, exhs)?;
+            nh2[0x1C0..0x1E0].copy_from_slice(&sb);
+            f.seek(SeekFrom::Start(p0_off))?;
+            f.write_all(&nh2)?;
+            f.flush()?;
+        }
+
         // 6. Verifica: TitleId + IVFC + SHAs resultado desde la imagen final.
         emit(6, 0, 3);
         check_cancel(cancel)?;
@@ -777,6 +889,29 @@ pub fn run_manifest(
             done_r += f.resultado_size;
             emit(6, 1 + 3 * done_r / total_res.max(1), 4);
         }
+        // SHAs ExeFS releídos de la imagen final (no de temporales).
+        if !mani.exefs.is_empty() {
+            let neabs = np0 + nhdr.exefs_off;
+            let mut eblob = vec![0u8; nhdr.exefs_size as usize];
+            {
+                let mut f = std::fs::File::open(&tmp_out)?;
+                f.seek(SeekFrom::Start(neabs))?;
+                f.read_exact(&mut eblob)?;
+            }
+            let edir = crate::exefs::read_dir(&eblob)?;
+            for xf in mani.exefs.iter() {
+                check_cancel(cancel)?;
+                let name = crate::exefs::normalize_name(&xf.ruta).unwrap_or_default();
+                let e = edir.iter().find(|e| e.name == name).ok_or_else(|| {
+                    Error::Verify(format!("{name}: no está en el ExeFS final (bug interno)"))
+                })?;
+                let (s, _) = crate::exefs::data_range(eblob.len() as u64, e);
+                let got = crate::romfs::sha256_range(&tmp_out, neabs + s, e.size as u64, cancel, &mut |_| {})?;
+                if got != xf.resultado_sha256.to_lowercase() {
+                    return Err(Error::Verify(format!("{}: no está el resultado en la imagen final", xf.ruta)));
+                }
+            }
+        }
         crate::cci::verify_cci(&tmp_out)?;
         if !inp.keep_work {
             std::fs::remove_file(&new_blob).ok();
@@ -787,6 +922,10 @@ pub fn run_manifest(
             std::fs::remove_file(&inp.out_cci)?;
         }
         std::fs::rename(&tmp_out, &inp.out_cci)?;
+        // 7. Salida CIA opcional (mismo .3ds verificado, envuelto).
+        finish_format(&inp.out_cci, inp.want_cia, &inp.cia_donor, inp.keep_work, cancel, &mut |d, t| {
+            emit(6, d, t);
+        })?;
         emit(6, 4, 4);
         Ok(())
     })();
@@ -831,6 +970,10 @@ pub struct StrictInputs {
     pub expected_content_sha256: Option<String>,
     pub out_cci: PathBuf,
     pub keep_work: bool,
+    /// Salida CIA directa (v0.5): tras el `.3ds` verificado se envuelve en
+    /// CIA con `cia_donor` (la base CIA).
+    pub want_cia: bool,
+    pub cia_donor: Option<PathBuf>,
 }
 
 const STRICT_STAGES: [(&str, f32); 6] = [
@@ -995,6 +1138,10 @@ pub fn run_strict(inp: &StrictInputs, cancel: &AtomicBool, prog: &mut dyn FnMut(
             std::fs::remove_file(&inp.out_cci)?;
         }
         std::fs::rename(&cur, &inp.out_cci)?;
+        // 6. Salida CIA opcional (mismo .3ds verificado, envuelto).
+        finish_format(&inp.out_cci, inp.want_cia, &inp.cia_donor, inp.keep_work, cancel, &mut |d, t| {
+            emit(5, d, t);
+        })?;
         emit(5, 1, 1);
         Ok(())
     })();

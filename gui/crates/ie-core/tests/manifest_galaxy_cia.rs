@@ -32,6 +32,8 @@ fn galaxy_cia_minipack() {
             pack_dir: pack.clone(),
             out_cci: out.clone(),
             keep_work: false,
+            want_cia: false,
+            cia_donor: None,
         },
         &cancel,
         &mut |p| {

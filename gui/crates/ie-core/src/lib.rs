@@ -16,6 +16,7 @@
 pub mod cci;
 pub mod cia;
 pub mod error;
+pub mod exefs;
 pub mod manifest;
 pub mod ncch;
 pub mod normalize;
