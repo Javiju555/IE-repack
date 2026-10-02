@@ -82,9 +82,8 @@ distintas todavía.
      o el `.zip` del pack (con `manifiesto.json`). Cada fichero se
      verifica dos veces por SHA-256.
    - **Xdelta estricto** (experimental): base + cadena de parches en orden.
-4. Elige el formato de salida (`.3ds` por defecto, o `.cia`) y dónde
-   guardar, y pulsa el botón. Hacen falta ~10–12 GB libres donde guardes
-   la salida.
+4. Elige dónde guardar y pulsa el botón. Hacen falta ~10–12 GB libres donde
+   guardes la salida.
 
 Nada de terminal, nada de instalar Rust ni nada más — el binario ya trae todo
 lo que necesita. La app escribe siempre `ie-repack.log` junto al
@@ -153,46 +152,85 @@ Si apuntas al `.zip` del blog en vez de al `.xdelta` suelto, también `unzip`.
 Estos dos últimos modos no aplican el parche: desempaquetan el RomFS de tu
 base, sustituyen solo los dos `.fa` y reempaquetan (conservan tu ExeFS).
 
-El resultado es un `.3ds` (imagen de cartucho/CCI) por defecto, o un `.cia`
-instalable si lo eliges en la app — ver "Salida `.3ds` o `.cia`".
+El resultado es un `.3ds` (imagen de cartucho/CCI) descifrado. Ver
+"Estado real y pendientes" para lo que hay y lo que no.
 
-## Salida `.3ds` o `.cia`
+## Estado real y pendientes
 
-Puedes elegir el formato de salida. Los dos funcionan:
+Lo que **hoy, en `main`, hace y no hace** esta herramienta:
 
-- **`.3ds`** (por defecto): imagen de cartucho/CCI. Se carga con
-  Archivo → Cargar archivo, sin pasar por instalador ni chequeo de
-  autorización. Es lo que vas a querer para emulador.
-- **`.cia`**: se monta envolviendo el CCI ya reconstruido con un donante, sin
-  volver a parchear. El punto delicado es el ticket y el TMD: monta un ticket
-  falso al estilo GodMode9 (firma y ECDSA a `0xFF`, titlekey a `0xFF`,
-  derechos genéricos) y rehashea el TMD, que es exactamente lo que verifican
-  los instaladores. Con eso instala y arranca. En consola real necesita CFW con
-  parches de firma (Luma3DS los trae de serie), igual que cualquier CIA montado
-  desde un `.3ds`.
+| | Estado |
+|---|---|
+| Salida `.3ds` descifrado | **Funciona**, en los tres modos |
+| Verificación por SHA-256 de cada fichero del pack | **Funciona** |
+| `.cia` de salida | **No está en `main`. Pendiente** (ver abajo) |
+| Parcheo de ExeFS (banner/icon) desde el manifiesto | **No está en `main`. Pendiente** |
+| Nombre de salida leído del SMDH | **No está en `main`. Pendiente** |
+| Cifrado para flashcart | No previsto todavía |
 
-> **Aviso — esto corrige una conclusión anterior que era falsa.** Durante un
-> tiempo anotamos aquí que "Azahar rechaza instalar cualquier CIA sin firma real
-> de verdad", con el error `d8a08004`. **No era eso.** No existe tal política en
-> el emulador: era el writer antiguo, que no montaba el ticket ni rehasheaba el
-> TMD. Con el writer actual el mismo CIA instala sin problema.
+Lo verificado hasta ahora, con números:
+
+- **Pack v3.0 de Inazuma 1·2·3** (1234 ficheros): 1234/1234 con su SHA-256
+  resultado comprobados **en la imagen final**, y arranque en español en
+  emulador. En 3DS real, pendiente.
+- **Pack v2.0**: instalado y jugado en Old XL real (11.17, Luma3DS).
+- **Galaxy Supernova**: verificado byte a byte contra una copia de referencia.
+
+### Pendiente: salida `.cia` instalable
+
+**Objetivo:** que la herramienta produzca un `.cia` que se instale en una
+3DS real con Luma3DS, no solo en emulador.
+
+**Dónde está.** Se desarrolló y llegó a instalar correctamente en Azahar
+(2.181.014.528 bytes, con `00000000.app` + `00000001.app` + TMD rehasheado),
+pero **no se ha Integrado en `main`**: falta el interruptor de formato en la
+GUI y su test. La pieza clave ya está entendida — el detalle que hace que un
+instalador acepte el CIA es montar un **ticket falso al estilo GodMode9**
+(firma y ECDSA a `0xFF`, titlekey a `0xFF`, derechos genéricos) y **rehashear
+el TMD**, que es lo que los instaladores verifican.
+
+> Esto **corrige una conclusión anterior que era falsa**. Durante un tiempo se
+> anotó aquí que "Azahar rechaza instalar cualquier CIA sin firma real de
+> verdad", con el error `d8a08004`. **No era eso.** No existe tal política en el
+> emulador: era el writer antiguo, que no montaba el ticket ni rehasheaba el
+> TMD. Con el writer correcto el mismo CIA instala.
+
+**Lo que falta y no está resuelto.** En una Old XL con Luma3DS + GodMode9
+**tampoco instala el CIA japonés de fábrica** — "instalación fallida", sin
+detalle. Eso apunta a un problema **ajeno a esta herramienta**, y es
+precisamente lo que bloquea el objetivo: no podemos validar nuestro `.cia` si
+el punto de partida tampoco instala. Los `.cia` pequeños sí instalan en esa
+misma consola, así que el CFW, los parches de firma y la SD están bien.
+
+**Cómo lo vamos a probar**, de menos a más caro:
+
+1. **Sin consola, ya se puede:** analizar por qué el CIA japonés de fábrica no
+   es instalable — comparar su TMD, ticket y `contentinfo` contra lo que
+   espera un instalador, y contra la salida de nuestro writer. Es trabajo de
+   escritorio con las herramientas del repo.
+2. **El mensaje literal del fallo:** el log de GodMode9 (`SD:/gm9/logs/`) o el
+   error de FBI, que es más descriptivo. Sin el literal cualquier hipótesis
+   es humo — es justo lo que hizo que una investigación anterior se colara por
+   la SD.
+3. **Control en consola:** instalar un `.cia` homebrew pequeño. Si entra, la
+   vía de instalación está sana y el problema es de este contenido concreto.
+4. **Bisección por tamaño:** construir un `.cia` con solo el contenido de la
+   actualización (índice 1, pequeño) y ver si instala. Discrimina
+   "problema de tamaño" de "problema de ticket/TMD".
+5. **Solo entonces**, instalar nuestro `.cia` y arrancar desde el menú HOME.
 
 ```bash
-# Equivalente a mano, por si vienes de la vía terminal:
+# Equivalente a mano para pasar de CIA a CCI, por si vienes de la vía terminal:
 makerom -ciatocci reempaquetado.cia -o reempaquetado.3ds
 ```
 
-## Limitaciones actuales
+### Otras limitaciones
 
-- La salida `.cia` está verificada en emulador (Azahar). **En consola real
-  queda sin probar**, y ojo con el diagnóstico: una Old XL con Luma3DS + GM9
-  tampoco instala el CIA japonés *de fábrica*, así que ahí hay un problema
-  ajeno a esta herramienta. Los CIA pequeños sí instalan en esa consola.
 - No hay salida cifrada para flashcart. Sería la fase 2.
-- Probado a fondo contra Galaxy Supernova e IE 1-2-3. Del pack v3.0 de
-  Inazuma 1·2·3 (1234 ficheros) está verificado el 100 % de los SHA-256 contra
-  la imagen final y el arranque en español; en 3DS real, pendiente. Big Bang
-  debería funcionar igual (mismo layout de CIA), pero no se ha probado.
+- Big Bang debería funcionar igual (mismo layout de CIA), pero no se ha probado.
+- El parche de Luis solo cubre la **versión 1.0** del juego. Con la
+  actualización oficial 1.4 instalada, el juego carga parte del código desde
+  ella y el modo Pack **no la modifica**: hay que aplicarle además su parche.
 
 ## Licencia
 
