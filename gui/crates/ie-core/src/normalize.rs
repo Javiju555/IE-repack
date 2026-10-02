@@ -60,6 +60,11 @@ pub fn sha256_file(path: &Path, cancel: &AtomicBool, mut on_chunk: impl FnMut(u6
     Ok(format!("{:x}", h.finalize()))
 }
 
+/// SHA-256 de un buffer en memoria (puertas sobre resultados ya leídos).
+pub fn sha256_bytes(data: &[u8]) -> String {
+    format!("{:x}", Sha256::digest(data))
+}
+
 /// SHA-256 del CCI excluyendo la cabecera NCSD ([0..0x200]).
 ///
 /// La cabecera depende del linaje del dump (firma RSA real del cartucho vs

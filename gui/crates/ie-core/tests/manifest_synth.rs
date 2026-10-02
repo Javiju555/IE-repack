@@ -204,6 +204,8 @@ fn pack_sintetico_end_to_end() {
             pack_dir: pack.clone(),
             out_cci: out.clone(),
             keep_work: false,
+            want_cia: false,
+            cia_donor: None,
         },
         &cancel,
         &mut |p| {

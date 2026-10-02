@@ -82,8 +82,9 @@ distintas todavía.
      o el `.zip` del pack (con `manifiesto.json`). Cada fichero se
      verifica dos veces por SHA-256.
    - **Xdelta estricto** (experimental): base + cadena de parches en orden.
-4. Elige dónde guardar y pulsa el botón. Hacen falta ~10–12 GB libres
-   donde guardes la salida.
+4. Elige el formato de salida (`.3ds` por defecto, o `.cia`) y dónde
+   guardar, y pulsa el botón. Hacen falta ~10–12 GB libres donde guardes
+   la salida.
 
 Nada de terminal, nada de instalar Rust ni nada más — el binario ya trae todo
 lo que necesita. La app escribe siempre `ie-repack.log` junto al
@@ -110,7 +111,9 @@ El modo pack acepta una carpeta o un `.zip` con `manifiesto.json` + parches
 `.xdelta` por fichero: verifica el SHA original de cada fichero de tu
 base, aplica su parche en estricto, verifica el resultado y reconstruye
 el RomFS (vale aunque cambien los tamaños). Verificado de punta a punta
-con IE 1-2-3 ES, incluido arranque en español en Azahar.
+con IE 1-2-3 ES hasta el pack v3.0 (1234/1234 ficheros con su SHA-256
+resultado comprobados en la imagen final), incluido arranque en español
+en Azahar.
 
 </details>
 
@@ -150,45 +153,46 @@ Si apuntas al `.zip` del blog en vez de al `.xdelta` suelto, también `unzip`.
 Estos dos últimos modos no aplican el parche: desempaquetan el RomFS de tu
 base, sustituyen solo los dos `.fa` y reempaquetan (conservan tu ExeFS).
 
-El resultado es un `.3ds` (imagen de cartucho/CCI), no un `.cia` — ver la
-siguiente sección de por qué.
+El resultado es un `.3ds` (imagen de cartucho/CCI) por defecto, o un `.cia`
+instalable si lo eliges en la app — ver "Salida `.3ds` o `.cia`".
 
-## Hallazgo aparte: Azahar rechaza instalar CIAs sin firma real
+## Salida `.3ds` o `.cia`
 
-Esto no tiene que ver con la traducción en sí, pero queda anotado
-porque cualquiera reempaquetando contenido de 3DS para Azahar se lo
-va a encontrar: en builds recientes de Azahar (probado en 2126.0), **el
-instalador de CIA rechaza cualquier CIA que no tenga una firma válida de
-verdad** — no solo los reempaquetados por esta herramienta, sino también
-dumps japoneses "normales" tal cual circulan por sitios de ROMs:
+Puedes elegir el formato de salida. Los dos funcionan:
 
-```
-Service.AM <Error> Blocked unauthorized encrypted CIA installation.
-Service.AM <Error> CIA file installation aborted with error code d8a08004
-```
+- **`.3ds`** (por defecto): imagen de cartucho/CCI. Se carga con
+  Archivo → Cargar archivo, sin pasar por instalador ni chequeo de
+  autorización. Es lo que vas a querer para emulador.
+- **`.cia`**: se monta envolviendo el CCI ya reconstruido con un donante, sin
+  volver a parchear. El punto delicado es el ticket y el TMD: monta un ticket
+  falso al estilo GodMode9 (firma y ECDSA a `0xFF`, titlekey a `0xFF`,
+  derechos genéricos) y rehashea el TMD, que es exactamente lo que verifican
+  los instaladores. Con eso instala y arranca. En consola real necesita CFW con
+  parches de firma (Luma3DS los trae de serie), igual que cualquier CIA montado
+  desde un `.3ds`.
 
-Probado también forzando la firma del ticket a cero (el patrón que usan
-la mayoría de dumps de la escena) — mismo resultado. No parece ser un
-problema de la firma en sí, sino del flujo de instalación en general para
-contenido no firmado oficialmente.
-
-La salida: **convertir a CCI (`.3ds`) en vez de distribuir como CIA**. Un
-`.3ds` se carga directo con Archivo → Cargar archivo, sin pasar por ningún
-instalador ni chequeo de autorización — es el mismo camino que seguiría un
-cartucho real insertado en la consola. Confirmado arrancando correctamente,
-con la pantalla de créditos de la traducción incluida.
+> **Aviso — esto corrige una conclusión anterior que era falsa.** Durante un
+> tiempo anotamos aquí que "Azahar rechaza instalar cualquier CIA sin firma real
+> de verdad", con el error `d8a08004`. **No era eso.** No existe tal política en
+> el emulador: era el writer antiguo, que no montaba el ticket ni rehasheaba el
+> TMD. Con el writer actual el mismo CIA instala sin problema.
 
 ```bash
+# Equivalente a mano, por si vienes de la vía terminal:
 makerom -ciatocci reempaquetado.cia -o reempaquetado.3ds
 ```
 
 ## Limitaciones actuales
 
-- La salida es siempre `.3ds` descifrado (lo que come Azahar). Un CIA
-  instalable o un `.3ds` cifrado para flashcart serían la fase 2.
-- Probado a fondo contra Galaxy Supernova e IE 1-2-3 (este último, arranque
-  en español verificado). Big Bang debería funcionar igual (mismo layout
-  de CIA), pero no se ha probado.
+- La salida `.cia` está verificada en emulador (Azahar). **En consola real
+  queda sin probar**, y ojo con el diagnóstico: una Old XL con Luma3DS + GM9
+  tampoco instala el CIA japonés *de fábrica*, así que ahí hay un problema
+  ajeno a esta herramienta. Los CIA pequeños sí instalan en esa consola.
+- No hay salida cifrada para flashcart. Sería la fase 2.
+- Probado a fondo contra Galaxy Supernova e IE 1-2-3. Del pack v3.0 de
+  Inazuma 1·2·3 (1234 ficheros) está verificado el 100 % de los SHA-256 contra
+  la imagen final y el arranque en español; en 3DS real, pendiente. Big Bang
+  debería funcionar igual (mismo layout de CIA), pero no se ha probado.
 
 ## Licencia
 
