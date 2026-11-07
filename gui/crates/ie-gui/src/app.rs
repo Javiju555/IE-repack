@@ -1485,18 +1485,18 @@ mod tests {
         // Estado Galaxy completado, rutas largas.
         let mut g = App::default();
         g.show_home = false;
-        g.base = Some(PathBuf::from("~/Juegos/IE-Galaxy-ES/Inazuma Eleven Go Galaxy - Supernova (Japan).cia"));
+        g.base = Some(PathBuf::from("/var/tmp/juegos-pruebas/IE-Galaxy-ES/Inazuma Eleven Go Galaxy - Supernova (Japan).cia"));
         g.base_info = "CTR-P-BGSJ [Supernova]".into();
         g.base_ok = true;
-        g.patch = Some(PathBuf::from("~/Juegos/IE-Galaxy-ES/IEGOGalaxySN parche 1.0.5.zip"));
+        g.patch = Some(PathBuf::from("/var/tmp/juegos-pruebas/IE-Galaxy-ES/IEGOGalaxySN parche 1.0.5.zip"));
         g.patch_info = "zip con el parche dentro (1384 MB)".into();
         g.patch_ok = true;
-        g.out = "~/Juegos/IE-Galaxy-ES/Inazuma Eleven Go Galaxy - Supernova (Japan)_ESP.3ds".into();
+        g.out = "/var/tmp/juegos-pruebas/IE-Galaxy-ES/Inazuma Eleven Go Galaxy - Supernova (Japan)_ESP.3ds".into();
         g.overall = 1.0;
         g.stage_label = "Etapa 7/7: Completado".into();
-        g.result = Some(Ok("Listo: ~/Juegos/IE-Galaxy-ES/x.3ds".into()));
+        g.result = Some(Ok("Listo: /var/tmp/juegos-pruebas/IE-Galaxy-ES/x.3ds".into()));
         for i in 0..6 {
-            g.push_log(format!("Línea {i} ~/Juegos/IE-Galaxy-ES/Inazuma Eleven Go Galaxy - Supernova (Japan).cia"));
+            g.push_log(format!("Línea {i} /var/tmp/juegos-pruebas/IE-Galaxy-ES/Inazuma Eleven Go Galaxy - Supernova (Japan).cia"));
         }
         check(g, "galaxy");
 
@@ -1504,15 +1504,15 @@ mod tests {
         let mut x = App::default();
         x.show_home = false;
         x.mode = Mode::Generic;
-        x.g_base = Some(PathBuf::from("~/Juegos/IE123/Inazuma Eleven 1-2-3 - Endou Mamoru Densetsu.3ds"));
+        x.g_base = Some(PathBuf::from("/var/tmp/juegos-pruebas/IE123/Inazuma Eleven 1-2-3 - Endou Mamoru Densetsu.3ds"));
         x.g_base_info = "3ds CTR-P-AETJ, TitleId 00040000000EDF00 [descifrado]".into();
         x.g_base_ok = true;
         x.g_patches = vec![
-            PathBuf::from("~/Juegos/IE123/inazuma123-es-v1.xdelta"),
-            PathBuf::from("~/Juegos/IE123/inazuma123-es-v1.1-update.xdelta"),
+            PathBuf::from("/var/tmp/juegos-pruebas/IE123/inazuma123-es-v1.xdelta"),
+            PathBuf::from("/var/tmp/juegos-pruebas/IE123/inazuma123-es-v1.1-update.xdelta"),
         ];
         x.g_sha = "aa5a9f6c5da4a2a98eb5dde97ceba51fa350cbff6f406893d5e08d515b9fd1e9".into();
-        x.out = "~/Juegos/IE123/inazuma123_es_v1.1.3ds".into();
+        x.out = "/var/tmp/juegos-pruebas/IE123/inazuma123_es_v1.1.3ds".into();
         x.overall = 0.6;
         x.stage_label = "Etapa 4/6: Aplicando parches".into();
         x.stage_detail = "1200 / 2000 MB".into();
@@ -1522,13 +1522,13 @@ mod tests {
         let mut m = App::default();
         m.show_home = false;
         m.mode = Mode::Pack;
-        m.m_base = Some(PathBuf::from("~/Juegos/IE123/Inazuma Eleven 1-2-3 - Endou Mamoru Densetsu.3ds"));
+        m.m_base = Some(PathBuf::from("/var/tmp/juegos-pruebas/IE123/Inazuma Eleven 1-2-3 - Endou Mamoru Densetsu.3ds"));
         m.m_base_info = "3ds CTR-P-AETJ, TitleId 00040000000EDF00 [descifrado]".into();
         m.m_base_ok = true;
-        m.m_pack = Some(PathBuf::from("~/Juegos/IE123/paquete_v55_con_un_nombre_muy_largo_para_probar"));
+        m.m_pack = Some(PathBuf::from("/var/tmp/juegos-pruebas/IE123/paquete_v55_con_un_nombre_muy_largo_para_probar"));
         m.m_pack_info = "v57-interna · 200 ficheros · base: Inazuma Eleven 1·2·3!! Endō Mamoru Densetsu".into();
         m.m_pack_ok = true;
-        m.out = "~/Juegos/IE123/inazuma123_es_v55_desde_modo_pack_con_nombre_largo.3ds".into();
+        m.out = "/var/tmp/juegos-pruebas/IE123/inazuma123_es_v55_desde_modo_pack_con_nombre_largo.3ds".into();
         m.overall = 0.4;
         m.stage_label = "Etapa 4/7: Aplicando parches".into();
         m.stage_detail = "800 / 1700 MB".into();
