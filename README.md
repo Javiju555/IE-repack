@@ -163,9 +163,9 @@ Lo que **hoy, en `main`, hace y no hace** esta herramienta:
 |---|---|
 | Salida `.3ds` descifrado | **Funciona**, en los tres modos |
 | Verificación por SHA-256 de cada fichero del pack | **Funciona** |
-| `.cia` de salida | **No está en `main`. Pendiente** (ver abajo) |
-| Parcheo de ExeFS (banner/icon) desde el manifiesto | **No está en `main`. Pendiente** |
-| Nombre de salida leído del SMDH | **No está en `main`. Pendiente** |
+| `.cia` de salida | **Funciona** (writer v0.5); en 3DS real, sin verificar (ver abajo) |
+| Parcheo de ExeFS (banner/icon) desde el manifiesto | **Funciona** (`banner.bnr`/`icon.bin`, mismo tamaño) |
+| Nombre de salida leído del SMDH | **Funciona** cuando la base es un `.cia` |
 | Cifrado para flashcart | No previsto todavía |
 
 Lo verificado hasta ahora, con números:
@@ -175,19 +175,38 @@ Lo verificado hasta ahora, con números:
   emulador. En 3DS real, pendiente.
 - **Pack v2.0**: instalado y jugado en Old XL real (11.17, Luma3DS).
 - **Galaxy Supernova**: verificado byte a byte contra una copia de referencia.
+- **Galaxy Supernova → `.cia`** (writer v0.5, 2026-11-07): 2.949.727.232
+  bytes desde la base japonesa, con los dos contents (2.948.874.240 y 823.296
+  bytes) y su SHA-256 idénticos a los slots del CCI. Instalación en consola,
+  pendiente.
 
 ### Pendiente: salida `.cia` instalable
 
 **Objetivo:** que la herramienta produzca un `.cia` que se instale en una
 3DS real con Luma3DS, no solo en emulador.
 
-**Dónde está.** Se desarrolló y llegó a instalar correctamente en Azahar
-(2.181.014.528 bytes, con `00000000.app` + `00000001.app` + TMD rehasheado),
-pero **no se ha Integrado en `main`**: falta el interruptor de formato en la
-GUI y su test. La pieza clave ya está entendida — el detalle que hace que un
-instalador acepte el CIA es montar un **ticket falso al estilo GodMode9**
-(firma y ECDSA a `0xFF`, titlekey a `0xFF`, derechos genéricos) y **rehashear
-el TMD**, que es lo que los instaladores verifican.
+**Dónde está.** Integrado en `main` desde la v0.5: la GUI trae el selector
+`.3ds` / `.cia` (solo se activa si hay un CIA donante del mismo TitleId, o la
+plantilla CIA en el modo Galaxy) y `ie_core::cia::build_from_cci` monta el CIA
+desde el CCI ya verificado, sin volver a parchear. Instala y arranca en Azahar
+(2.181.014.528 bytes, con `00000000.app` + `00000001.app` + TMD rehasheado).
+La pieza clave para que un instalador lo acepte es montar un **ticket falso al
+estilo GodMode9** (firma y ECDSA a `0xFF`, titlekey a `0xFF`, derechos
+genéricos) y **rehashear el TMD** (`FixTmdHashes`), más el bitmap de contents
+de la cabecera.
+
+**Qué se comprueba solo.** Dos tests cubren el writer:
+
+- `tests/cia_synth.rs` (CI, sin dumps): CCI y donante sintéticos, y comprueba
+  bitmap, ticket falso, records del TMD y el contentinfo rehasheado.
+- `tests/cia_real.rs` (ignorado, necesita dumps): construye un `.cia` real y
+  contrasta cada content y su SHA-256 con el CCI de partida.
+
+```bash
+# con la base japonesa y un CIA del mismo juego en disco
+IE_CIA_BASE="…japones.3ds" IE_CIA_DONOR="…donante.cia" IE_CIA_OUT="/ruta/salida.cia" \
+  cargo test -p ie-core --test cia_real -- --ignored --nocapture
+```
 
 > Esto **corrige una conclusión anterior que era falsa**. Durante un tiempo se
 > anotó aquí que "Azahar rechaza instalar cualquier CIA sin firma real de
@@ -228,7 +247,7 @@ makerom -ciatocci reempaquetado.cia -o reempaquetado.3ds
 
 - No hay salida cifrada para flashcart. Sería la fase 2.
 - Big Bang debería funcionar igual (mismo layout de CIA), pero no se ha probado.
-- El parche del equipo solo cubre la **versión 1.0** del juego. Con la
+- El pack de traducción solo cubre la **versión 1.0** del juego. Con la
   actualización oficial 1.4 instalada, el juego carga parte del código desde
   ella y el modo Pack **no la modifica**: hay que aplicarle además su parche.
 
