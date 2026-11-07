@@ -48,7 +48,7 @@ jobs:
             target: x86_64-pc-windows-msvc
             plat: windows-x86_64
             bin: ie-repack.exe
-          - os: macos-14
+          - os: macos-latest
             target: aarch64-apple-darwin
             plat: macos-arm64
             bin: ie-repack
