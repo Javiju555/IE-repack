@@ -82,7 +82,7 @@ fn cadena_estricta_y_hash_final() {
     let base = dir.join("base.3ds");
     cci::build_cci(&c0, &c1, 0x000400000010BB00, &base, &cancel, &mut |_, _| {}).unwrap();
 
-    // Cadena v1 (un cambio) + v1.1 (dos cambios más), como el equipo.
+    // Cadena v1 (un cambio) + v1.1 (dos cambios más), como el caso real.
     let b1 = dir.join("b1.3ds");
     std::fs::copy(&base, &b1).unwrap();
     mutate(&b1, &[0x5000]);

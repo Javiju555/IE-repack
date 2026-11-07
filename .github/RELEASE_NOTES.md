@@ -30,7 +30,7 @@ issue: https://github.com/Javiju555/ie-repack/issues
 
 Reconstruye una versión traducida y jugable de **Inazuma Eleven GO Galaxy:
 Supernova** a partir de **tu propio CIA japonés + el parche `.xdelta`
-público** de @la comunidad del parche (v1.0.5). Sin terminal: abres la app, eliges los
+público** del equipo de traducción (v1.0.5). Sin terminal: abres la app, eliges los
 dos archivos, pulsas el botón y sale un `.3ds` listo para **Archivo →
 Cargar archivo** en Azahar.
 
@@ -57,5 +57,5 @@ aplica el parche en modo forzado: verificado byte a byte contra una copia
 traducida de referencia (cabecera NCCH, IVFC, ExeFS y ambos `.fa` idénticos).
 Detalle completo en el `README.md` del repo.
 
-Todo el crédito de la traducción es del equipo original liderado por
-el equipo de traducción. Este proyecto no incluye ninguna ROM, CIA ni dato del juego.
+Todo el crédito de la traducción es del equipo original que la hizo. Este
+proyecto no incluye ninguna ROM, CIA ni dato del juego.

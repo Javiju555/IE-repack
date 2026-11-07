@@ -11,8 +11,8 @@ parche oficial.
 
 ## El problema que resuelve
 
-El parche de traducción al español de Galaxy (v1.0.5, por el equipo liderado
-por el equipo de traducción) se distribuye como un `.xdelta` — un diff binario que
+El parche de traducción al español de Galaxy (v1.0.5, del equipo de
+traducción del juego) se distribuye como un `.xdelta` — un diff binario que
 compara el CIA japonés byte a byte contra una fuente concreta
 (`Supernovabase.cia`) que el equipo tenía en su momento. Las instrucciones
 oficiales piden solo "un CIA desencriptado del juego", sin más detalle de
@@ -258,4 +258,4 @@ texto de licencia en `gui/sidecars/`) y el descifrado usa las mismas claves
 AES que distribuye 3dstool en su fuente abierta. Este repositorio no incluye
 ni incluirá ninguna ROM, CIA, ni archivo de datos del juego — solo el script
 que automatiza la reconstrucción. Los créditos de la traducción son
-enteramente del equipo original liderado por el equipo de traducción.
+enteramente del equipo original que la hizo.

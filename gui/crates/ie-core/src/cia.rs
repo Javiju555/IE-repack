@@ -345,7 +345,7 @@ const SMDH_LANGS: [usize; 3] = [5, 1, 0];
 ///
 /// Busca el SMDH en sus dos colocaciones conocidas: región meta tras el
 /// TMD (CIA estándar) y footer tras el último content (p. ej. el CIA de
-/// el equipo, con `footer_size` 0x3AC0 y SMDH a +0x400). Prueba idiomas en
+/// referencia, con `footer_size` 0x3AC0 y SMDH a +0x400). Prueba idiomas en
 /// orden español, inglés, japonés.
 ///
 /// Devuelve `None` si no hay SMDH legible: la GUI usa entonces el nombre
@@ -435,7 +435,7 @@ fn align64(n: u64) -> u64 {
 
 /// Donante para salida CIA: bloques copiados del CIA original (misma
 /// TitleId). Vale con donantes "footer-style" (SMDH al final, p. ej. el
-/// CIA del equipo) y "meta-style" (meta clásica tras el TMD).
+/// CIA de referencia) y "meta-style" (meta clásica tras el TMD).
 #[derive(Debug, Clone)]
 pub struct CiaDonor {
     pub cert: Vec<u8>,
