@@ -1,61 +1,32 @@
-# IE Repack v0.2.0 — parcheador ES (Galaxy + packs por manifiesto)
+# IE Repack v0.5.0-beta.1 — en pruebas, se busca gente que la pruebe
 
-Tu base japonesa (`.cia`/`.3ds`) + la traducción → `.3ds` en español listo
-para Azahar. Tres modos a elegir en la pantalla de inicio: Galaxy
-Supernova (parche único), Pack de traducción (carpeta o `.zip` con
-`manifiesto.json`, verificado fichero a fichero) y Xdelta estricto
-experimental. Portable, sin instalador: descomprime y ejecuta. Si algo
-falla, adjunta `ie-repack.log` en un issue:
-https://github.com/Javiju555/ie-repack/issues
+**Versión de pruebas, no final.** La estable sigue siendo la
+[0.4.1](https://github.com/Javiju555/ie-repack/releases/tag/v0.4.1). La
+herramienta se ha desarrollado y probado sobre todo en Linux y **no se ha
+podido probar en Windows ni instalar el `.cia` en una 3DS real**. Si la
+pruebas, cuéntalo en un issue, salga bien o mal:
+https://github.com/Javiju555/ie-repack/issues (tu sistema, el modo que usaste
+y, si falla, el `ie-repack.log` que se crea junto al programa).
 
-Probado con Galaxy Supernova ES e IE 1-2-3 ES (arranque en español
-verificado). Este proyecto no incluye ninguna ROM, CIA ni dato del juego.
+## Qué cambia
 
----
-
-# IE Repack v0.2.0-beta.1 — modo Pack (IE 1-2-3 ES, en pruebas)
-
-**Versión de pruebas, no final.** Nuevo modo "Pack de traducción
-(manifiesto)": base japonesa (`.cia`/`.3ds`) + carpeta del pack
-(`manifiesto.json` + parches por fichero) → `.3ds` traducido. Verificado
-con el pack interno v57 de IE 1-2-3 ES (200/200 ficheros, arranque en
-español en Azahar). El modo Galaxy sigue igual.
-
-Si algo falla, adjunta `ie-repack.log` (junto al programa) en un
-issue: https://github.com/Javiju555/ie-repack/issues
-
----
-
-# IE Galaxy Repack v0.1.0 — Galaxy Supernova en español, sin dramas
-
-Reconstruye una versión traducida y jugable de **Inazuma Eleven GO Galaxy:
-Supernova** a partir de **tu propio CIA japonés + el parche `.xdelta`
-público** del equipo de traducción (v1.0.5). Sin terminal: abres la app, eliges los
-dos archivos, pulsas el botón y sale un `.3ds` listo para **Archivo →
-Cargar archivo** en Azahar.
+- **Windows: sin ventana de CMD.** Ya no se abre la consola negra que, si se
+  cerraba, cerraba también el programa. *Sin probar en Windows: es lo
+  primero que hay que confirmar.*
+- **Salida `.cia`** además del `.3ds`, si tienes un CIA del mismo juego como
+  donante. Instala y arranca en Azahar. *En 3DS real, sin probar.*
+- **Errores más claros cuando la base no vale:** dice si es otro juego u otra
+  versión, si ya está traducida o si el volcado está incompleto, en vez de
+  «ningún origen cuadra con el manifiesto».
+- **Al terminar,** te dice dónde está el archivo y cómo abrirlo (Azahar o
+  Lime3DS para `.3ds`; FBI en consola para `.cia`).
+- Iconos y banner del juego también se parchean si el pack los trae, y el
+  nombre de salida sale del propio juego cuando la base es un `.cia`.
 
 ## Qué hay en cada zip
 
-- `ie-galaxy-repack` (o `.exe`): la aplicación gráfica.
-- `sidecars/<tu-so>/xdelta3*`: el decodificador oficial usado por dentro.
-- `LICENSE`: licencia MIT del proyecto (xdelta3 es Apache 2.0, con su
-  licencia incluida junto a su binario).
+- `ie-repack` (o `ie-repack.exe`): la aplicación. Portable, sin instalador.
+- `sidecars/<tu-so>/`: el `xdelta3` oficial que usa por dentro. Descomprime
+  el zip entero: el programa necesita esa carpeta al lado.
 
-## Uso mínimo
-
-1. Consigue tu CIA japonés del juego y el `.zip` del parche del blog.
-2. Ponlos junto al programa (los precarga solos) o elígelos con los botones.
-3. Pulsa **Crear .3ds en español**, espera al `OK` y carga el `.3ds` en Azahar.
-4. Hacen falta ~10 GB libres donde guardes la salida (mueve ~3 GB varias
-   veces) y el proceso tarda de segundos a pocos minutos según el PC.
-
-## Por qué existe
-
-El parche oficial falla con checksum contra cualquier dump que no sea el
-archivo concreto del traductor. Esta herramienta descifra tu base in place y
-aplica el parche en modo forzado: verificado byte a byte contra una copia
-traducida de referencia (cabecera NCCH, IVFC, ExeFS y ambos `.fa` idénticos).
-Detalle completo en el `README.md` del repo.
-
-Todo el crédito de la traducción es del equipo original que la hizo. Este
-proyecto no incluye ninguna ROM, CIA ni dato del juego.
+Este proyecto no incluye ninguna ROM, CIA ni dato del juego.

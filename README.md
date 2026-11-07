@@ -180,6 +180,22 @@ Lo verificado hasta ahora, con números:
   bytes) y su SHA-256 idénticos a los slots del CCI. Instalación en consola,
   pendiente.
 
+### Se busca gente que pruebe la 0.5.0 (beta)
+
+La herramienta se ha desarrollado y probado sobre todo en **Linux**, y no la
+he podido probar en **Windows**, que es donde la usa casi todo el mundo. La
+0.5.0 sale como **beta** hasta que alguien confirme estas dos cosas:
+
+- **Windows:** al abrir `ie-repack.exe` ya **no aparece la ventana negra de
+  CMD**, y el parcheo termina bien.
+- **3DS real:** el `.cia` de salida se instala (FBI o GodMode9) y el juego
+  arranca.
+
+Si lo pruebas, cuéntalo en un
+[issue](https://github.com/Javiju555/ie-repack/issues), salga bien o mal:
+tu sistema, el modo que usaste y, si falla, el `ie-repack.log`. Mientras no
+haya confirmación, la versión estable sigue siendo la 0.4.1.
+
 ### Pendiente: salida `.cia` instalable
 
 **Objetivo:** que la herramienta produzca un `.cia` que se instale en una
