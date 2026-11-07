@@ -12,3 +12,5 @@ ie-galaxy-repack.*/
 # Build de Rust (la GUI vive en gui/).
 target/
 gui/target/
+# Documentos internos de investigación: se quedan en local, no van al repo.
+investigacion/
