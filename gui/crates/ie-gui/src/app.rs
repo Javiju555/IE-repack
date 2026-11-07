@@ -1248,6 +1248,13 @@ impl eframe::App for App {
                             self.push_log(format!("No se pudo abrir la carpeta: {}", dir.display()));
                         }
                     }
+                    // Cómo abrirlo, aquí y no en un LEEME: es lo primero que
+                    // pregunta quien sigue un tutorial.
+                    ui.weak(if self.out_cia {
+                        "Para la consola: instálalo con Luma3DS/FBI (hace falta CFW con parches de firma). En Azahar también se puede importar."
+                    } else {
+                        "Ábrelo en Azahar o Lime3DS: Archivo → Cargar archivo. No hay que instalar nada."
+                    });
                 }
                 Some(Err(msg)) => {
                     ui.colored_label(egui::Color32::LIGHT_RED, format!("ERROR: {}", elide_middle(msg, 80)))
@@ -1406,6 +1413,42 @@ mod tests {
         assert_eq!(app.cia_donor(), Some(PathBuf::from("/tmp/base.CIA")));
         app.set_out_format(false);
         assert_eq!(app.out, "/tmp/Juego (español).3ds");
+    }
+
+    /// Al terminar, la app dice cómo abrir el resultado (lo que en el vídeo se
+    /// explicaba aparte, a mano).
+    #[test]
+    fn al_terminar_dice_como_abrirlo() {
+        use egui_kittest::kittest::Queryable;
+        fn etiquetas(app: App) -> Vec<String> {
+            let mut h = egui_kittest::Harness::new_eframe(|_cc| app);
+            h.set_size(egui::vec2(860.0, 640.0));
+            h.run();
+            // El texto de una etiqueta suelta puede venir en `label` o en
+            // `value` según el nodo: se miran los dos.
+            let mut out = Vec::new();
+            for n in h.query_all_by(|_| true) {
+                for t in [n.label(), n.value()].into_iter().flatten() {
+                    out.push(t.to_string());
+                }
+            }
+            out
+        }
+
+        let mut ds = App::default();
+        ds.show_home = false;
+        ds.out = "/tmp/Juego (español).3ds".into();
+        ds.result = Some(Ok("Listo".into()));
+        let t = etiquetas(ds);
+        assert!(t.iter().any(|s| s.contains("Azahar")), "sin pista de Azahar: {t:?}");
+
+        let mut cia = App::default();
+        cia.show_home = false;
+        cia.out = "/tmp/Juego (español).cia".into();
+        cia.out_cia = true;
+        cia.result = Some(Ok("Listo".into()));
+        let t = etiquetas(cia);
+        assert!(t.iter().any(|s| s.contains("Luma3DS")), "sin pista de consola: {t:?}");
     }
 
     /// La UI completa con rutas largas cabe en 780 px en ambos modos: ningún
