@@ -83,10 +83,24 @@ fn which_in_path(name: &str) -> Option<PathBuf> {
     })
 }
 
+/// En Windows, `xdelta3` es un sidecar de consola: sin `CREATE_NO_WINDOW` cada
+/// llamada abre una ventana negra encima de la app.
+#[cfg(windows)]
+fn hidden(mut cmd: Command) -> Command {
+    use std::os::windows::process::CommandExt;
+    cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+    cmd
+}
+
+#[cfg(not(windows))]
+fn hidden(cmd: Command) -> Command {
+    cmd
+}
+
 /// Suma de `VCDIFF target window length` de `xdelta3 printhdrs` = tamaño
 /// exacto de la salida esperada (sirve para la barra de progreso).
 pub fn target_size(xdelta3: &Path, patch: &Path) -> Result<u64> {
-    let out = Command::new(xdelta3)
+    let out = hidden(Command::new(xdelta3))
         .arg("printhdrs")
         .arg(patch)
         .output()
@@ -158,7 +172,7 @@ fn decode_inner(
     if dest.exists() {
         std::fs::remove_file(dest)?;
     }
-    let mut cmd = Command::new(xdelta3);
+    let mut cmd = hidden(Command::new(xdelta3));
     cmd.arg("-d");
     if no_checksum {
         cmd.arg("-n");

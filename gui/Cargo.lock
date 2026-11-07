@@ -1831,7 +1831,7 @@ dependencies = [
 
 [[package]]
 name = "ie-gui"
-version = "0.4.1"
+version = "0.5.0"
 dependencies = [
  "eframe",
  "egui_kittest",

@@ -775,7 +775,7 @@ pub fn build_from_cci(
     // ilegible (bug que tumbaba la instalación).
     o.seek(SeekFrom::Start(align64(0x2020)))?;
     let mut cur = align64(0x2020);
-    let mut pad_to_64 = |o: &mut File, cur: &mut u64| -> Result<()> {
+    let pad_to_64 = |o: &mut File, cur: &mut u64| -> Result<()> {
         let pad = pad64(*cur) - *cur;
         if pad > 0 {
             o.write_all(&vec![0u8; pad as usize])?;

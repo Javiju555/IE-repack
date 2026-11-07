@@ -2,6 +2,11 @@
 //
 // SPDX-License-Identifier: MIT
 
+// En release no hay consola detrás: sin esto Windows abre un CMD junto a la
+// ventana (y el youtuber acababa avisando de no cerrarlo). El registro ya va a
+// ie-repack.log, así que la consola no aporta nada.
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 use eframe::egui;
 use ie_gui::App;
 
