@@ -281,3 +281,80 @@ fn pack_sintetico_end_to_end() {
     assert_eq!(&blob[fbase as usize + 16..fbase as usize + 20], b"1234");
     std::fs::remove_dir_all(&dir).ok();
 }
+
+/// Reescribe los 5 bytes de `f1` en la base sintética (mismo tamaño, sin
+/// desplazar nada) para simular otra revisión o una copia ya traducida.
+fn reescribe_f1(base: &Path, nuevos: &[u8; 5]) {
+    let mut blob = std::fs::read(base).unwrap();
+    let pat = b"AAAAAZZZ1234";
+    let pos = blob
+        .windows(pat.len())
+        .position(|w| w == pat)
+        .expect("patrón f1/f2 en la base sintética");
+    blob[pos..pos + 5].copy_from_slice(nuevos);
+    std::fs::write(base, &blob).unwrap();
+}
+
+/// Pack mínimo con un solo fichero (f1): original `AAAAA`, resultado `dst`.
+fn pack_f1(dir: &Path, dst: &[u8]) -> PathBuf {
+    let patch = make_patch(b"AAAAA", dst, dir, "f1");
+    let pack = dir.join("pack");
+    std::fs::create_dir_all(pack.join("parches")).unwrap();
+    std::fs::copy(&patch, pack.join("parches/f1.xdelta")).unwrap();
+    let mf = format!(
+        r#"{{"version":"t","base":"s","ficheros":[{{"ruta":"f1","original_size":5,"original_sha256":"{o}","resultado_size":{n},"resultado_sha256":"{r}","parche":"parches/f1.xdelta"}}]}}"#,
+        o = sha(b"AAAAA"),
+        n = dst.len(),
+        r = sha(dst)
+    );
+    std::fs::write(pack.join("manifiesto.json"), mf).unwrap();
+    pack
+}
+
+fn error_de_manifest(base: PathBuf, pack: PathBuf, tag: &str) -> String {
+    let out = base.parent().unwrap().join(format!("out-{tag}.3ds"));
+    let cancel = AtomicBool::new(false);
+    pipeline::run_manifest(
+        &pipeline::ManifestInputs {
+            base,
+            pack_dir: pack,
+            out_cci: out,
+            keep_work: false,
+            want_cia: false,
+            cia_donor: None,
+        },
+        &cancel,
+        &mut |_| {},
+    )
+    .expect_err("la base no debería cuadrar")
+    .to_string()
+}
+
+#[test]
+fn base_ya_traducida_se_explica() {
+    let dir = std::env::temp_dir().join(format!("ie-msyn-ya-{}.d", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let (base, _, _) = build_synth(&dir);
+    // La base ya trae el resultado del pack ("BBBBB") en lugar del original.
+    reescribe_f1(&base, b"BBBBB");
+    let pack = pack_f1(&dir, b"BBBBB");
+
+    let e = error_de_manifest(base, pack, "ya");
+    assert!(e.contains("ya tiene la traducción"), "mensaje inesperado: {e}");
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn base_distinta_se_explica() {
+    let dir = std::env::temp_dir().join(format!("ie-msyn-otra-{}.d", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let (base, _, _) = build_synth(&dir);
+    // Ni el original ni el resultado del pack: otra revisión/volcado.
+    reescribe_f1(&base, b"CCCCC");
+    let pack = pack_f1(&dir, b"BBBBB");
+
+    let e = error_de_manifest(base, pack, "otra");
+    assert!(e.contains("no es la que espera el pack"), "mensaje inesperado: {e}");
+    assert!(e.contains("f1"), "debería nombrar el fichero: {e}");
+    std::fs::remove_dir_all(&dir).ok();
+}

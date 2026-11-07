@@ -189,6 +189,49 @@ pub fn discover_file_data_base(
     ))
 }
 
+/// Explica por qué la base no cuadra cuando falla el descubrimiento.
+///
+/// El mensaje genérico ("ningún origen cuadra") deja al usuario sin salida: en
+/// la práctica casi siempre es una de estas tres cosas, y cada una se arregla
+/// de forma distinta. Aquí se distinguen antes de devolver el error.
+#[allow(clippy::too_many_arguments)]
+pub fn explain_base_mismatch(
+    src: &Path,
+    src_base: u64,
+    romfs_len: u64,
+    small_size: u64,
+    result_size: u64,
+    result_sha: &str,
+    name: &str,
+    tables: &[u8],
+    cancel: &AtomicBool,
+) -> Error {
+    let cands = find_candidates(tables, name, small_size);
+    if cands.is_empty() {
+        return Error::Verify(format!(
+            "la base no trae «{name}» de {small_size} bytes: es otro juego u otra versión del mismo. \
+             (Se necesita la copia japonesa original.)"
+        ));
+    }
+    // ¿Y si ya está traducida? Entonces el pack es el que sobra, no la base.
+    let cands_res = find_candidates(tables, name, result_size);
+    if !cands_res.is_empty()
+        && discover_file_data_base(
+            src, src_base, romfs_len, result_size, result_sha, &cands_res, cancel, &mut |_| {},
+        )
+        .is_ok()
+    {
+        return Error::Verify(format!(
+            "esta base ya tiene la traducción aplicada: «{name}» coincide con el resultado del pack, \
+             no con el original. Parte de tu copia japonesa sin parchear."
+        ));
+    }
+    Error::Verify(format!(
+        "la base no es la que espera el pack: el contenido de «{name}» ({small_size} bytes) no coincide \
+         con ningún candidato. Suele ser otra revisión o región, o un volcado incompleto."
+    ))
+}
+
 /// Resuelve un fichero a sus entradas verificadas en B (todas las que
 /// cuadren; normalmente una; duplicados de tabla, varias).
 #[allow(clippy::too_many_arguments)]

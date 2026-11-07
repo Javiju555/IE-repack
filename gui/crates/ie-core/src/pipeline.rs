@@ -516,11 +516,22 @@ pub fn run_manifest(
         let small_name = small.ruta.rsplit('/').next().unwrap_or(&small.ruta);
         let small_cands = crate::romfs::find_candidates(&tables, small_name, small.original_size);
         let total_probe = 0x400000u64;
-        let file_data_base = crate::romfs::discover_file_data_base(
+        let file_data_base = match crate::romfs::discover_file_data_base(
             &norm.path, romfs_abs, romfs_len,
             small.original_size, &small.original_sha256.to_lowercase(), &small_cands, cancel,
             &mut |b| emit(2, b / 16, total_probe / 16),
-        )?;
+        ) {
+            Ok(b) => b,
+            // El genérico «ningún origen cuadra» no ayuda a nadie: se mira si
+            // la base es otro juego, otra revisión o una copia ya traducida.
+            Err(_) => {
+                return Err(crate::romfs::explain_base_mismatch(
+                    &norm.path, romfs_abs, romfs_len,
+                    small.original_size, small.resultado_size,
+                    &small.resultado_sha256.to_lowercase(), &small.ruta, &tables, cancel,
+                ))
+            }
+        };
         // Resuelve cada fichero (puerta estricta por contenido).
         struct Found {
             ruta: String,
